@@ -1,6 +1,6 @@
 ---
 title: "Final Project"
-author: "WRITE GROUP MEMBERS NAMES HERE!"
+author: "Vickie Ip, Brendan Seto and Leonard Yoon"
 date: "December 22, 2017"
 output:
   html_document:
@@ -18,7 +18,9 @@ output:
 ## Load all packages
 
 ```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
-
+# install.packages("jsonlite")
+library(tidyverse)
+library(jsonlite)
 ```
 
 
