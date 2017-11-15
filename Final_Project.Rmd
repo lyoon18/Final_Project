@@ -38,8 +38,7 @@ other words, load data via `read_csv("data/CSV_NAME.csv")` and not via
 ```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
 # read_json("train.json")
 
-train <- stream_in(file("~/Final_Project/train.json"))
-train <- fromJSON("~/Final_Project/data/train.json") %>% 
+train <- fromJSON("data/train.json") %>% 
   unnest()
 ```
 
