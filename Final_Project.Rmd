@@ -1,5 +1,5 @@
 ---
-title: "Final Project"
+title: "Final Project: What's Cooking?"
 author: "Vickie Ip, Brendan Seto and Leonard Yoon"
 date: "December 22, 2017"
 output:
@@ -14,61 +14,458 @@ editor_options:
   chunk_output_type: console
 ---
 
-
-
-
-## Load all packages
-
 ```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
 # install.packages("jsonlite")
 library(tidyverse)
 library(jsonlite)
 ```
 
+# Abstract
 
+**Overall Goal:** Predict type of cuisine based on ingredients
 
-## Load data and perform data cleaning
+**Project Goal:** Explore decision trees with categorical variables.  Specifically, the variation of runtime and accuracy with different data reduction strategies.  
 
-Please delete all "notes" before submission.
+**Results:**
 
-Note: CSV/data files should be read assuming they are in the `data` folder. In
-other words, load data via `read_csv("data/CSV_NAME.csv")` and not via
-`read_csv("/Users/aykim/Documents/MATH495/Final_Project/data/CSV_NAME.csv")`
+# EDA
 
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
-# read_json("train.json")
+## Data
 
-train <- fromJSON("data/train.json") %>% 
+```{r, cache=TRUE}
+food <- read_csv("data/recipe.csv")
+```
+
+```{r, cache=TRUE}
+long <- fromJSON("data/train.json") %>% 
   unnest()
 ```
 
+Our data came from the *"What's Cooking?"* Kaggle competition.  Each of the 39,774 rows was a recipe, with columns listing the different ingredients.  For some of the analysis we used one-hot-encoding to transform the data to binary indicators.  This lead to our final dataset consisting of 6715 variables, one for each unique ingredient.  
+
+[Ingredient word cloud]
+
+There were 20 total cuisines represented in our dataset.  Of these, Italian was the most prevalent, making up nearly 20% of the total recipies.  
+
+```{r}
+long1a <- long %>% 
+  group_by(cuisine) %>% 
+  summarise(num = n()) %>% 
+  mutate(percent = num/nrow(long)*100)
+
+ggplot(long1a, aes(x=reorder(cuisine, -num))) + 
+  geom_bar(aes(y=num, fill = "orange3"), color = "black", stat = "identity")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))+
+  labs(list(title = "Cuisines By Number of Recipes", x = "Cuisine", y = "Recipes"))+
+  guides(fill=FALSE)
+```
+## One Hot Encoding
+## Identifying Ingredients
+
+```{r}
+# Find the Identifying Ingredients
+unique <- long %>% 
+  group_by(ingredients) %>% 
+  mutate(kinds = n_distinct(cuisine), n = n())
+
+data <- unique %>% filter(kinds!=1)
+
+special <- unique %>% filter(kinds == 1)
+#n_distinct(special$ingredients)
+#n_distinct(special$id)
+
+```
+
+Of the 6,715 ingredients, 2,597 only appear in one type of cuisine.  We can use this information to perform an initial screening of our data, classifying any dish that has one of these ingredients.  This eliminates 5,438 of our recipes in the training set and 
+
+Some cuisines benefit more from this filtering.  14 percent of all recipes had an identifying ingredient, but 33% of brazilian and 26% of mexican cuisine did.  
+
+```{r}
+# Number of Recipes with identifying ingredients
+s<- special %>% 
+  group_by(id, cuisine) %>% 
+  summarise() %>% 
+  group_by(cuisine) %>% 
+  summarise(n= n()) 
+
+# Number of Recipes Total
+num <- unique %>% 
+  group_by(id, cuisine) %>% 
+  summarise(n = n()) %>% 
+  group_by(cuisine) %>% 
+  summarise(recipes = n())
+
+# Calculate as percentage of total recipes
+s <- merge(s, num, by = "cuisine")
+s <- s %>% 
+  mutate(percent = n/recipes*100)
+total <- s %>% summarise(n = sum(n), recipes = sum(recipes), percent = n/recipes*100)
 
 
-## EDA visualizations and tables
+g <- ggplot(s, aes(x=reorder(cuisine, -n))) + 
+  geom_bar(aes(y=n), fill = "orange3", color = "black", stat = "identity")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))+
+  labs(list(title = "Total Number", x = "Cuisine", y = "Dishes with Identifying Ingredients"))
 
-Note: If you had to illustrate using no modelling but only graphs and tables which
-variables have the most predictive power, which would you include?
+p <- ggplot(s, aes(x=reorder(cuisine, -n))) + 
+  geom_bar(aes(y=percent), fill = "skyblue", color = "black",stat = "identity")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))+
+  labs(list(title = "Percent", x = "Cuisine", y = "Percent with Identifying Ingredients"))+
+  geom_hline(yintercept = total$percent, linetype = "longdash")
 
-* Perform a cross-validation on only the final/ultimate model used for your
-submission.
-* The "score" in question should be the same as used to compute the Kaggle
-leaderboard. In other words, your estimated score should be roughly equal to the
-score returned by Kaggle after your submission.
+grid.arrange(g,p, ncol=2, top = "Recipes with Identifying Ingredients")
+```
 
+## Simple Ingredients
 
+Many of the ingredients listed in the data are variations of the same.  For instance:
 
-## Crossvalidation of ultimate model
+```{r}
+colnames(food)[c(4,5)]
+```
 
-Note: Hardcode your crossvalidation here i.e. do not use built-in crossvalidation
-options.
+It does not make sense to consider these two as distinct ingredients and their addition contributes to a very slow runtime for our model.  In an attempt to reduce our dimention size, we will try to combine these as best we can in a quick, automated way.  
 
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r}
+common <- data %>% filter(!stringr::str_detect(ingredients, " "))
+#n_distinct(common$ingredients)
+commonI <- common[!duplicated(common$ingredients), "ingredients"]
+```
 
+We start by finding ingredients that consist of only one word.  We consider these ingredients "fundemental", unable to be simplified more.  For instance, both of the above variables should really be considered *"spinach"*. 
+
+```{r}
+allI <- data[!duplicated(data$ingredients), "ingredients"]
+# Need to avoid non-substrings like oil -> soil
+commonI <- ungroup(commonI)
+commonI2 <- rbind(commonI %>% mutate(ingredients = paste(ingredients," ", sep="")),commonI %>% mutate(ingredients = paste(" ",ingredients, sep="")))
+
+similarity <- c()
+for(i in allI$ingredients){
+  for(j in commonI2$ingredients){
+    if(grepl(j,i)) similarity <- rbind(similarity,c(i,j))
+  }
+}
+
+similarity <- as.data.frame(similarity)
+similarity[,2] <- gsub("\\s", "", similarity[,2])
+colnames(similarity) <- c("long","short")
+
+### There are some (1186) ingredients that map to multiple short versions.  We shall assume that the longer short name is most descriptive.  A better analysis would go through them manually and decide
+similarity1 <- similarity %>% group_by(long) %>% 
+  mutate(n = n()) %>% 
+  filter(n>1)
+#n_distinct(similarity1$long)
+
+similarity2 <- similarity %>% 
+  group_by(long) %>% 
+  slice(which.max(nchar(short)))
+
+#n_distinct(similarity2$long)
+#n_distinct(similarity2$short)
+```
+
+We have now mapped nearly 3000 variables to 418 (total number of ingredients is 1193).  This is a very significent reduction, even more than the identifying ingredient filter.  
+
+```{r}
+commons <- merge(data, similarity2, by.x = "ingredients", by.y = "long", all.x = TRUE)
+
+commons <- commons %>% mutate(ingredients = ifelse(!is.na(short),short,ingredients)) %>% 
+  select(ingredients,id, cuisine)
 ```
 
 
 
-## Create submission
+#Models
+
+## CART
+
+## Random Forest
+
+### Trims
+
+#### No Trim
+```{r, cache=TRUE}
+library(randomForest)
+recipe <- food
+names(recipe) <- make.names(names(recipe))
+recipe <- recipe[, !duplicated(colnames(recipe), fromLast = TRUE)]
+recipe[] <- lapply(recipe, factor)
+
+
+sub <- recipe[sample(nrow(recipe),nrow(recipe)*.8),]
+sub2 <- anti_join(recipe, sub, by = "id")
+
+fit <- randomForest(cuisine ~. - id, data = sub)
+fit_large <- fit$confusion
+```
+
+```{r warning = FALSE}
+fit_large <- cbind(true = rownames(fit_large), fit_large)
+
+fit_large_graph <- as.data.frame(fit_large) %>% gather(key = guess, value = number, brazilian:vietnamese) %>% 
+  mutate(number = as.numeric(as.character(number))) %>% 
+  group_by(true) %>% 
+  mutate(total = sum(number)) %>% 
+  ungroup() %>% 
+  mutate(percent = number/total*100)
+```
+
+```{r}
+ggplot(fit_large_graph %>% filter(percent>=10)) +
+  geom_point(aes(guess, true, size = percent, color = percent)) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  scale_y_discrete(name="", limits = rev(levels(fit_large_graph$true))) +
+  labs(list(title = "Predictive Accuracy", y = "True", x = "Guess"))+
+  guides(color = FALSE)+
+  scale_colour_gradient(low = "pink", high = "red4")
+```
+
+
+#### No Identifying
+
+```{r}
+identify <- filter(unique, kinds != 1)
+
+
+# Create dummy variable
+dummies = model.matrix(~identify$ingredients)
+dumb <- cbind(identify[,c(1,2)], dummies)
+
+# Group individual recipe
+dumb <- dumb[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
+```
+
+```{r, cache=TRUE}
+recipe <- dumb
+names(recipe) <- make.names(names(recipe))
+recipe <- recipe[, !duplicated(colnames(recipe), fromLast = TRUE)]
+recipe[] <- lapply(recipe, factor)
+
+
+sub <- recipe[sample(nrow(recipe),nrow(recipe)*.8),]
+sub2 <- anti_join(recipe, sub, by = "id")
+
+fit <- randomForest(cuisine ~. - id, data = sub)
+fit_large <- fit$confusion
+fit
+
+predictedd1 <- predict(fit, sub2)
+t1 <- data_frame(guess = predictedd1, true = sub2$cuisine)
+error <- t1 %>% mutate(yes = ifelse(guess==true,0,1))
+t2 <- model.matrix(~t1$guess)
+cajun <- rowSums(t2)
+cajun <- ifelse(cajun == 1,1,0)
+
+t <- cbind(as.character(t1$true), cajun, t2[,-1])
+colnames(t) <- c("true","brazilian","british","cajun_creole","chinese","filipino","french","greek","indian","irish","italian","jamaican","japanese","korean","mexican","moroccan","russian","southern_us","spanish","thai","vietnamese")
+t <- as.data.frame(t)
+t[2:21] <- sapply(t[2:21],as.character)
+t[2:21] <- sapply(t[2:21],as.numeric)
+
+t <-   t %>% 
+  group_by(true) %>% 
+  summarise_all(mean, na.rm = TRUE)
+
+#write_csv(t, "trimRF.csv")
+```
+
+```{r}
+fit_large_graph <- t %>% gather(key = guess, value = percent, 2:ncol(t))
+
+
+ggplot(fit_large_graph %>% filter(percent>0.1)) +
+  geom_point(aes(guess, true, size = percent, color = percent)) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  scale_y_discrete(name="True", limits = rev(levels(fit_large_graph$true))) +
+  labs(list(title = "Trimmed Random Forest 1: Err: 32.7%, Runtime: ~1hr 20min", x = "Guess"))+
+  guides(color = FALSE, size = FALSE)+
+  scale_colour_gradient(low = "pink", high = "red4")
+```
+
+#### Fewer Categories
+
+```{r}
+plenty <- long1a %>% filter(percent >=2.5)
+
+identify <- unique %>% 
+  group_by(id) %>% 
+  filter(id %in% train$id) %>% 
+  mutate(keep = ifelse(min(kinds)==1,0,1)) %>% 
+  ungroup() %>% 
+  filter(keep == 1 & kinds != 20 & cuisine %in% plenty$cuisine) %>% 
+  select(id, cuisine, ingredients)
+
+
+# Create dummy variable
+dummies = model.matrix(~identify$ingredients)
+dumb <- cbind(identify[,c(1,2)], dummies)
+
+# Group individual recipe
+dumb <- dumb[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
+```
+
+```{r, cache=TRUE}
+recipe <- dumb
+names(recipe) <- make.names(names(recipe))
+recipe <- recipe[, !duplicated(colnames(recipe), fromLast = TRUE)]
+recipe[] <- lapply(recipe, factor)
+
+fit2 <- randomForest(cuisine ~. - id, data = recipe)
+fit_large2 <- fit2$confusion
+```
+
+```{r}
+test <- unique %>% 
+  group_by(id) %>% 
+  filter(id %in% testid$id) %>% 
+  select(id, cuisine, ingredients)
+
+
+# Create dummy variable
+dumb_test <- model.matrix(~test$ingredients)
+dummy <- data.frame(test[,c(1,2)], dumb_test)
+
+# Group individual recipe
+dumb <- dumb[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
+colnames(dumb) <- make.names(colnames(recipe))
+dumb <- dumb[, !duplicated(colnames(dumb), fromLast = TRUE)]
+dumb[] <- lapply(dumb, factor)
+
+dumb2 <- dumb[,c(-1,-2)]
+
+
+predictedd2 <- predict(fit2, as.matrix(dumb2))
+                       
+t <- data_frame(guess = predictedd, true = sub2$cuisine)
+t2 <- model.matrix(~t$guess)
+cajun <- rowSums(t2)
+cajun <- ifelse(cajun == 1,1,0)
+
+t3 <- cbind(as.character(t$true), cajun, t2[,-1])
+colnames(t3) <- c("true","cajun_creole","chinese","french","greek","indian","italian","japanese","mexican","southern_us","thai")
+t3 <- as.data.frame(t3)
+t3[2:11] <- sapply(t3[2:11],as.character)
+t3[2:11] <- sapply(t3[2:11],as.numeric)
+
+t3 <-   t3 %>% 
+  group_by(true) %>% 
+  summarise(total = n(),cajun_creole = sum(cajun_creole)/total,chinese = sum(chinese)/total, french = sum(french)/total, greek = sum(greek)/total, indian = sum(indian)/total, italian = sum(italian)/total, japanese = sum(japanese)/total, mexican = sum(mexican)/total, southern_us = sum(southern_us)/total, thai = sum(thai)/total)
+t3 <- t3[,-2]
+#write_csv(t3, "trim2RF.csv")
+```
+
+```{r}
+fit_large_graph2 <- t3 %>% gather(key = guess, value = percent, 2:11)
+
+ggplot(fit_large_graph2 %>% filter(percent>=.10)) +
+  geom_point(aes(guess, as.character(true), size = percent, color = percent))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  scale_y_discrete(name="True", limits = rev(levels(fit_large_graph2$true))) +
+  labs(list(title = "Trimmed Random Forest 2: Err: 23.6%, Runtime: ~1hr 15 min", x = "Guess"))+
+  guides(color = FALSE, size = FALSE)+
+  scale_colour_gradient(low = "pink", high = "red4")
+```
+
+#### Commons
+
+```{r}
+ids <- unique %>% group_by(id) %>% summarise
+train <- sample_frac(ids, 0.8)
+testid <- anti_join(ids, train, by = "id")
+
+identify <- commons %>% filter(id %in% train$id)
+
+# Create dummy variable
+dummies = model.matrix(~identify$ingredients)
+dumb <- cbind(identify[,c(2,3)], dummies)
+
+# Group individual recipe
+dumb <- dumb[,-3] %>% group_by(id, cuisine) %>% summarise_all(max)
+
+# Fix column names
+colnames(dumb) <- make.names(colnames(dumb))
+colnames(dumb)[3:ncol(dumb)] <- c("seven.Up",stringr::str_sub(colnames(dumb)[4:ncol(dumb)],21,-1))
+#sum(dumb[,c(-1,-2)] %>% summarise_all(max))
+dumb[] <- lapply(dumb, factor)
+```
+
+```{r, cache=TRUE}
+fit2 <- randomForest(cuisine ~. - id, data = dumb)
+# 15 min!!!
+fit_large2 <- fit2$confusion
+fit2_importance <- fit2$importance
+```
+
+```{r, cache=TRUE}
+# Crossvalidation
+test <- unique %>% 
+  group_by(id) %>% 
+  filter(id %in% testid$id) %>% 
+  select(id, cuisine, ingredients)
+
+test <- merge(test, similarity2, by.x = "ingredients", by.y = "long", all.x = TRUE)
+
+test <- test %>% mutate(ingredients = ifelse(!is.na(short),short,ingredients)) %>% 
+  select(ingredients,id, cuisine)
+
+# Add indicators for ingredients in test but not train data
+
+addI <- test %>%select(ingredients) %>% group_by(ingredients) %>% 
+  summarise(id=0, cuisine = "mexican")
+test <- rbind(test, addI)
+
+# Take out ingredients in test that are not in train
+
+test1 <- test %>% filter(ingredients %in% identify$ingredients)
+
+
+##### One hot encoding #####
+# Create dummy variable
+dumb_test <- model.matrix(~test1$ingredients)
+dummy <- data.frame(test1[,c(2,3)], dumb_test)
+
+# Group individual recipe
+dumby <- dummy[,-3] %>% group_by(id, cuisine) %>% summarise_all(max)
+# fix column names
+colnames(dumby) <- make.names(colnames(dumby))
+colnames(dumby)[3:ncol(dumby)] <- c("seven.Up",stringr::str_sub(colnames(dumby)[4:ncol(dumby)],18,-1))
+#sum(dumby[,c(-1,-2)] %>% summarise_all(max))
+dumby[] <- lapply(dumby, factor)
+
+dumby2 <- dumby[,c(-2)]
+all.equal(rownames(fit2_importance), colnames(dumby2))
+
+predictedd2 <- predict(fit2, as.matrix(dumby2))
+                       
+t <- data_frame(guess = predictedd2, true = dumby$cuisine)
+error <- t %>% mutate(error = ifelse(guess == true, 0, 1)) %>% select(error) %>% summarise(error = round(mean(error),3)*100)
+t2 <- as.data.frame(cbind(t,model.matrix(~t$guess)))[,c(-1,-3)] %>% group_by(true) %>% summarise_all(mean)
+colnames(t2)[2:ncol(t2)] <- stringr::str_sub(colnames(t2)[2:ncol(t2)],8,-1)
+
+#write_csv(t2, "trim3RF.csv")
+```
+
+```{r}
+fit_large_graph2 <- as.data.frame(t2) %>% gather(key = guess, value = percent, 2:20)
+
+ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
+  geom_point(aes(guess, as.character(true), size = percent, color = percent))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  scale_y_discrete(name="True", limits = rev(levels(fit_large_graph2$true))) +
+  labs(list(title = paste("Trimmed RF Common Ingred: Err: ", error$error,"%, Runtime: ~15 min!!!, Var: ",ncol(dumb), sep=""), x = "Guess"))+
+  guides(color = FALSE, size = FALSE)+
+  scale_colour_gradient(low = "pink", high = "red4")
+```
+
+# Create submission
 
 Note: Output a CSV using `write_csv(DATAFRAME_NAME, path="data/SUBMISSION_NAME.csv")`
 that is Kaggle submitable. This submission should return a Kaggle score that is
@@ -76,13 +473,13 @@ close to your crossvalidated score.
 
 
 
-## Citations and references
+# Citations and references
 
 Note: All citations and references must be included here.
 
 
 
-## Supplementary materials
+# Supplementary materials
 
 Note: Anything else you've tried that you'd like to include, but isn't essential to
 the above, like other EDA's, other modeling approaches you've tried, etc. Please
