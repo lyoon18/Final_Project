@@ -344,7 +344,7 @@ ggplot(results, aes(x=cp, y=MLL)) +
   labs(x="CART Complexity Parameter", y="Multi-Class Log Loss", title="Crossvalidation estimates of Multi-Class Log Loss for CART model") +
   geom_vline(xintercept = cp_star, col="red")
 ```
-![CART Confusion Matrix] (http://ibb.co/e8Bq5R)
+![CART Confusion Matrix] (http://ibb.co/e8Bq5R?raw=true)
 
 
 
@@ -552,7 +552,9 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   scale_colour_gradient(low = "pink", high = "red4")
 ```
 
-!(http://ibb.co/he9A5R)
+![Trimmed RF Confusion Matrix] (RFTrimmed2CM.png)
+
+(http://ibb.co/he9A5R)
 
 
 As shown in the confusion matrix plot above, this trimmed Random Forest model achieved an accuracy rate of 69.8% and only took 15 minutes to run! All cuisines were predicted correctly, but at varying prediction strengths. For example, Italian was predicted to be 13 other cuisines, while all British and Spanish recipes were predicted correctly. 
