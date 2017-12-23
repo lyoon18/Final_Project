@@ -156,13 +156,8 @@ grid.arrange(g,p, ncol=2, top = "Recipes with Identifying Ingredients")
 
 ```{r}
 # Wordcloud
-library(dplyr)
 library(wordcloud)
-library(tidyverse)
 library("RColorBrewer")
-
-#no_special <- unique %>% filter(kinds == 20)
-#no_special <- no_special[with(no_special, order(-n)), ]
 
 freq <- sort(table(long$ingred), decreasing = T)
 freq <- freq[1:80]
@@ -283,7 +278,7 @@ ggplot(t %>% filter(percent>0.1)) +
   guides(color = FALSE, size = FALSE)+scale_colour_gradient(low = "pink", high = "red4")
 ```
 
-## Crossvalidation of ultimate model
+### Crossvalidation of ultimate model
 ```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
 # k = 2 fold crossvalidation
 
@@ -459,94 +454,9 @@ ggplot(fit_large_graph3 %>% filter(percent>0.1)) +
   scale_colour_gradient(low = "pink", high = "red4")
 ```
 
-#### Fewer Categories
-
-```{r}
-plenty <- long1a %>% filter(percent >=2.5)
-
-identify <- unique %>% 
-  group_by(id) %>% 
-  filter(id %in% train$id) %>% 
-  mutate(keep = ifelse(min(kinds)==1,0,1)) %>% 
-  ungroup() %>% 
-  filter(keep == 1 & kinds != 20 & cuisine %in% plenty$cuisine) %>% 
-  select(id, cuisine, ingredients)
-
-
-# Create dummy variable
-dummies = model.matrix(~identify$ingredients)
-dumb <- cbind(identify[,c(1,2)], dummies)
-
-# Group individual recipe
-dumb <- dumb[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
-```
-
-```{r, cache=TRUE}
-recipe <- dumb
-names(recipe) <- make.names(names(recipe))
-recipe <- recipe[, !duplicated(colnames(recipe), fromLast = TRUE)]
-recipe[] <- lapply(recipe, factor)
-
-fit2 <- randomForest(cuisine ~. - id, data = recipe)
-fit_large2 <- fit2$confusion
-```
-
-```{r}
-test <- unique %>% 
-  group_by(id) %>% 
-  filter(id %in% testid$id) %>% 
-  select(id, cuisine, ingredients)
-
-
-# Create dummy variable
-dumb_test <- model.matrix(~test$ingredients)
-dummy <- data.frame(test[,c(1,2)], dumb_test)
-
-# Group individual recipe
-dumb <- dumb[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
-colnames(dumb) <- make.names(colnames(recipe))
-dumb <- dumb[, !duplicated(colnames(dumb), fromLast = TRUE)]
-dumb[] <- lapply(dumb, factor)
-
-dumb2 <- dumb[,c(-1,-2)]
-
-
-predictedd2 <- predict(fit2, as.matrix(dumb2))
-                       
-t <- data_frame(guess = predictedd, true = sub2$cuisine)
-t2 <- model.matrix(~t$guess)
-cajun <- rowSums(t2)
-cajun <- ifelse(cajun == 1,1,0)
-
-t3 <- cbind(as.character(t$true), cajun, t2[,-1])
-colnames(t3) <- c("true","cajun_creole","chinese","french","greek","indian","italian","japanese","mexican","southern_us","thai")
-t3 <- as.data.frame(t3)
-t3[2:11] <- sapply(t3[2:11],as.character)
-t3[2:11] <- sapply(t3[2:11],as.numeric)
-
-t3 <-   t3 %>% 
-  group_by(true) %>% 
-  summarise(total = n(),cajun_creole = sum(cajun_creole)/total,chinese = sum(chinese)/total, french = sum(french)/total, greek = sum(greek)/total, indian = sum(indian)/total, italian = sum(italian)/total, japanese = sum(japanese)/total, mexican = sum(mexican)/total, southern_us = sum(southern_us)/total, thai = sum(thai)/total)
-t3 <- t3[,-2]
-write_csv(t3, "trim2RF.csv")
-```
-
-```{r}
-fit_large_graph2 <- t3 %>% gather(key = guess, value = percent, 2:11)
-
-ggplot(fit_large_graph2 %>% filter(percent>=.10)) +
-  geom_point(aes(guess, as.character(true), size = percent, color = percent))+
-  theme_bw()+
-  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
-  scale_y_discrete(name="True", limits = rev(levels(fit_large_graph2$true))) +
-  labs(list(title = "Trimmed Random Forest 2: Err: 23.6%, Runtime: ~1hr 15 min", x = "Guess"))+
-  guides(color = FALSE, size = FALSE)+
-  scale_colour_gradient(low = "pink", high = "red4")
-```
-
 #### Commons
 
-```{r}
+```{r, eval = FALSE}
 ids <- unique %>% group_by(id) %>% summarise
 train <- sample_frac(ids, 0.8)
 testid <- anti_join(ids, train, by = "id")
@@ -567,14 +477,14 @@ colnames(dumb)[3:ncol(dumb)] <- c("seven.Up",stringr::str_sub(colnames(dumb)[4:n
 dumb[] <- lapply(dumb, factor)
 ```
 
-```{r, cache=TRUE}
+```{r, cache=TRUE, eval=FALSE}
 fitC <- randomForest(cuisine ~. - id, data = dumb)
 # 15 min!!!
 fit_largeC <- fitC$confusion
 fitC_importance <- fitC$importance
 ```
 
-```{r, cache=TRUE}
+```{r, cache=TRUE, eval=FALSE}
 # Crossvalidation
 test <- unique %>% 
   group_by(id) %>% 
@@ -625,7 +535,8 @@ write_csv(t2, "trimCRF.csv")
 ```
 
 ```{r}
-fit_large_graph2 <- as.data.frame(t2) %>% gather(key = guess, value = percent, 2:20)
+tC <- read_csv("trimCRF.csv")
+fit_large_graph2 <- as.data.frame(tC) %>% gather(key = guess, value = percent, 2:nrow(tC))
 
 ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   geom_point(aes(guess, as.character(true), size = percent, color = percent))+
