@@ -543,10 +543,9 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   guides(color = FALSE, size = FALSE)+
   scale_colour_gradient(low = "pink", high = "red4")
 
-summary(fitC)
 ```
 
-As shown in the confusion matrix plot above, this trimmed Random Forest model achieved an accuracy rate of 69.8% and only took 15 minutes to run! All cuisines were predicted correctly, but the strength of the predictions vary. For example, Italian was predicted the 
+As shown in the confusion matrix plot above, this trimmed Random Forest model achieved an accuracy rate of 69.8% and only took 15 minutes to run! All cuisines were predicted correctly, but at varying prediction strengths. For example, Italian was predicted to be 13 other cuisines, while all British and Spanish recipes were predicted correctly. 
 
 
 
