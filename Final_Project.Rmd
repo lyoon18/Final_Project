@@ -95,37 +95,14 @@ names <- c("id","cuisine",sapply(colnames(food)[c(-1,-2)], function(x) substr(x,
 colnames(food) <- names
 ```
 
-## Most Commonly Used Ingredients
-
-```{r}
-# Wordcloud
-library(dplyr)
-library(wordcloud)
-library(tidyverse)
-library("RColorBrewer")
-
-unique <- long %>% 
-  group_by(ingredients) %>% 
-  mutate(kinds = n_distinct(cuisine), n = n())
-
-#no_special <- unique %>% filter(kinds == 20)
-#no_special <- no_special[with(no_special, order(-n)), ]
-
-freq <- sort(table(long$ingred), decreasing = T)
-freq <- freq[1:80]
-freq <- as.data.frame(freq)
-colnames(freq) <- c("Ingredient", "Frequency")
-set.seed(101)
-wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.order=FALSE, rot.per = 0, colors=brewer.pal(8,"Dark2"))
-```
-As the wordcloud shows, the most commonly used ingredient is salt. Since 189,440 of these ingredients appear in all 20 cuisines, it might be a suitable idea to remove these ingredients from our training set.
-
-
-
 ## Identifying Ingredients
 
 ```{r}
 # Find the Identifying Ingredients
+unique <- long %>% 
+  group_by(ingredients) %>% 
+  mutate(kinds = n_distinct(cuisine), n = n())
+
 data <- unique %>% filter(kinds!=1)
 
 special <- unique %>% filter(kinds == 1)
@@ -174,6 +151,29 @@ p <- ggplot(s, aes(x=reorder(cuisine, -n))) +
 
 grid.arrange(g,p, ncol=2, top = "Recipes with Identifying Ingredients")
 ```
+
+## Most Commonly Used Ingredients
+
+```{r}
+# Wordcloud
+library(dplyr)
+library(wordcloud)
+library(tidyverse)
+library("RColorBrewer")
+
+#no_special <- unique %>% filter(kinds == 20)
+#no_special <- no_special[with(no_special, order(-n)), ]
+
+freq <- sort(table(long$ingred), decreasing = T)
+freq <- freq[1:80]
+freq <- as.data.frame(freq)
+colnames(freq) <- c("Ingredient", "Frequency")
+set.seed(101)
+wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.order=FALSE, rot.per = 0, colors=brewer.pal(8,"Dark2"))
+```
+
+As the wordcloud shows, the most commonly used ingredient is salt. Since 189,440 of these ingredients appear in all 20 cuisines, it might be a suitable idea to remove these ingredients from our training set.
+
 
 ## Simplifying Ingredients
 
@@ -224,7 +224,7 @@ similarity2 <- similarity %>%
 #n_distinct(similarity2$short)
 ```
 
-We have now mapped nearly 3000 variables to 418 (total number of ingredients is 1193).  This is a very significent reduction, even more than the identifying ingredient filter.  
+We have now mapped nearly 3,000 variables to 418 (total number of ingredients is 1,193).  This is a very significent reduction, even more than the identifying ingredient filter!
 
 ```{r}
 commons <- merge(data, similarity2, by.x = "ingredients", by.y = "long", all.x = TRUE)
@@ -235,30 +235,35 @@ commons <- commons %>% mutate(ingredients = ifelse(!is.na(short),short,ingredien
 
 
 
-#Models
+# Models
 
 ## CART
 
-First, some more data cleaning. Five cuisines didn't show up enough to be predicted by CART in any scenario that I tried (and I tried many!). I combined two of them (British and Irish) to form a larger category (UK) that can be predicted by CART and got rid of the other three cuisines.
+First, some more data cleaning. Five cuisines didn't show up enough to be predicted by CART in any scenario that we tried (and we tried many!). We combined two of them (British and Irish) to form a larger category (UK) that can be predicted by CART and got rid of the other three cuisines.
 
 ```{r}
 food$cuisine <- replace(food$cuisine, food$cuisine == "irish"|food$cuisine == "british", "UK") # add irish to british
 
-food <- food %>% filter(cuisine != "brazilian") # not frequent enough
-food <- food %>% filter(cuisine != "russian") # not frequent enough
-food <- food %>% filter(cuisine != "jamaican") # not frequent enough
+food <- food %>% 
+  filter(cuisine != "brazilian") %>% 
+  filter(cuisine != "russian") %>% 
+  filter(cuisine != "jamaican")  # These cuisines did not appear frequent enough
 ```
 
-Here's the model that I end up using. See crossvalidation below to figure out why.
+Here's the model that we ended up using. See crossvalidation below to figure out why.
 
 ```{r}
+library(rpart)
+library(tictoc)
 dataA <- food[sample(nrow(food),nrow(food)*.5),] 
 dataB <- anti_join(food, dataA, by = "id")
 
-cp_star <- .0013 # see cv section for this
+cp_star <- .0013 # see CV section for this
 model_formula <- as.formula(cuisine ~ . - id)
 tree_parameters <- rpart.control(maxdepth = 20, cp = cp_star, minsplit = 1, minbucket = 1) 
+tic()
 model_CART <- rpart(model_formula, data = dataA, control=tree_parameters) # takes a LONG time
+toc()
 
 # Score/error
 y_hat <- model_CART %>% 
@@ -345,8 +350,12 @@ ggplot(results, aes(x=cp, y=MLL)) +
 
 ### Trims
 
+
 #### No Trim
 ```{r, cache=TRUE, eval=FALSE}
+
+#### No Trim (Baseline Model)
+
 recipe <- food
 names(recipe) <- make.names(names(recipe))
 recipe <- recipe[, !duplicated(colnames(recipe), fromLast = TRUE)]
