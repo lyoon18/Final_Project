@@ -557,27 +557,40 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
 # Create submission
 
 ```{r}
-kaggle <- fromJSON("data/train.json") %>% 
+kaggle1 <- fromJSON("data/test.json") %>% 
   unnest()
 
+# Add missing ingredients
+addI <- data_frame(ingredients = colnames(dumb), id=0)
+kaggle <- rbind(kaggle1, addI)
+
+kaggle <- merge(kaggle, similarity2, by.x = "ingredients", by.y = "long", all.x = TRUE)
+
+kaggle <- kaggle %>% mutate(ingredients = ifelse(!is.na(short),short,ingredients)) %>% 
+  select(ingredients,id)
+
 k <- model.matrix(~kaggle$ingredients)
-ka <- cbind(kaggle[,c(1,2)], k) # this takes a few minutes
+ka <- cbind(kaggle$id, k)
+ka <- as.data.frame(ka)
+colnames(ka)[1]<- "id"
 
 # Group individual recipe
-kaggle <- food[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
+kaggle <- ka[,-2] %>% group_by(id) %>% summarise_all(max)
+colnames(kaggle)[2:ncol(kaggle)] <- stringr::str_sub(colnames(kaggle)[2:ncol(kaggle)],19,-1)
+colnames(kaggle) <- make.names(names=colnames(kaggle), unique=TRUE, allow_ = TRUE)
 rm(k, ka)
 
-# Add missing ingredients
-addI <- long %>%select(ingredients) %>% group_by(ingredients) %>% 
-  summarise(id=0, cuisine = "mexican")
-kaggle <- rbind(kaggle, addI)
+# Best Model
 
-# First RF model
+kRF <- kaggle %>% select(one_of(colnames(dumb)[-2])) 
+kRF[,-1] <- mapply(as.factor, kRF[,-1])
 
-kRF <- kaggle[,-which(names(kaggle) %in% colnames(sub))]
+predictK1 <- predict(fitC, kRF)
 
-predictK1 <- predict(fit, kaggle)
+submission <- read_csv("data/sample_submission.csv")
+submission$cuisine <- predictK1[-1]
 
+write_csv(submission, "submission.csv")
 ```
 
 
