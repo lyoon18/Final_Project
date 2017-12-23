@@ -597,7 +597,7 @@ write_csv(submission, "submission.csv")
 
 If we get rid of Italian, then Southern US becomes the cuisine that is over-predicted.
 
-```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5}
 food2 <- food %>% filter(cuisine != "italian")
 sub_2 <- food2[sample(nrow(food2),nrow(food2)*.5),]
 sub2_2 <- anti_join(food2, sub, by = "id")
@@ -628,7 +628,7 @@ ggplot(t2 %>% filter(percent>0.1)) +
 
 If we get rid of Southern US, then Mexican becomes the cuisine that is over-predicted.
 
-```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5}
 food3 <- food2 %>% filter(cuisine != "southern_us")
 sub_3 <- food3[sample(nrow(food3),nrow(food3)*.5),]
 sub2_3 <- anti_join(food3, sub, by = "id")
@@ -658,9 +658,9 @@ ggplot(t3 %>% filter(percent>0.1)) +
 
 So it seems like there is no escape from this phenomenon of one category getting everything to predict to it! Not sure why it does this.
 
-The table below was helpful for debugging some things. It shows all of the cuisines and how many ingredients in the data set are attributed to each cuisine.
+The code for the table below was helpful for debugging some things. It shows all of the cuisines and how many ingredients in the data set are attributed to each cuisine.
 
-```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5}
 table.of.stuff <- food$cuisine %>% table() %>% sort()
 table.of.stuff <- as.data.frame(table.of.stuff)
 # table.of.stuff <- table.of.stuff %>% filter(Freq > 1000)
