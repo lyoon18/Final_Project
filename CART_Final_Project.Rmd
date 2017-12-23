@@ -71,7 +71,7 @@ names <- c("id","cuisine",sapply(colnames(food)[c(-1,-2)], function(x) substr(x,
 colnames(food) <- names
 ```
 
-### CART
+## CART
 
 First, some more data cleaning. Five cuisines didn't show up enough to be predicted by CART in any scenario that I tried (and I tried many!). I combined two of them (British and Irish) to form a larger category (UK) that can be predicted by CART and got rid of the other three cuisines.
 
@@ -96,7 +96,10 @@ model_CART <- rpart(model_formula, data = dataA, control=tree_parameters) # take
 
 # Score/error
 y_hat <- model_CART %>% 
-  predict(newdata=dataB, type="class") # takes about a minute
+  predict(newdata=dataB, type="class") # takes about a minutes
+score <- MLmetrics::Accuracy(y_true = dataB$cuisine, y_pred = y_hat)*100
+
+# Confusion Matrix
 conf.matrix <- MLmetrics::ConfusionMatrix(y_true = dataB$cuisine, y_pred = y_hat)
 t <- as.data.frame(conf.matrix) %>% 
   group_by(y_true) %>% 
@@ -112,10 +115,9 @@ ggplot(t %>% filter(percent>0.1)) +
   guides(color = FALSE, size = FALSE)+scale_colour_gradient(low = "pink", high = "red4")
 ```
 
-## Crossvalidation of ultimate model
+The categorization accuracy for this model on our pseudo-test set is `r score`%.
 
-Note: Hardcode your crossvalidation here i.e. do not use built-in crossvalidation
-options.
+## Crossvalidation of ultimate model
 
 ```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
 # k = 2 fold crossvalidation
@@ -126,7 +128,7 @@ cp_vector <- seq(from = .0007, to = .0025, by = .0003)
 # Save results here
 results <- data_frame(
   cp = cp_vector,
-  MLL = 0 # multi class log loss (MLL)
+  score = 0 # classification accuracy
 )
 
 model_formula <- as.formula(cuisine ~ . - id)
@@ -145,36 +147,34 @@ for(i in 1:length(cp_vector)){
   tree_parameters <- rpart.control(maxdepth = 20, cp = cp_vector[i], minsplit = 1, minbucket = 1) 
   model_CART <- rpart(model_formula, data = dataA, control=tree_parameters) # takes a LONG time
 
-  p_hat_matrix <- model_CART %>% 
-    predict(type = "prob", newdata = dataB) # takes about a minute
-
-  MLLB <- MLmetrics::MultiLogLoss(y_true = dataB$cuisine, y_pred = p_hat_matrix)
+  y_hat <- model_CART %>% 
+    predict(newdata=dataB, type="class") # takes about a minute
+  scoreB <- MLmetrics::Accuracy(y_true = dataB$cuisine, y_pred = y_hat)
 
   # Fit model onto B, get predictions for A, compute MLL for A
   
   tree_parameters <- rpart.control(maxdepth = 20, cp = cp_vector[i], minsplit = 1, minbucket = 1) 
   model_CART <- rpart(model_formula, data = dataB, control=tree_parameters) # takes a LONG time
 
-  p_hat_matrix <- model_CART %>% 
-    predict(type = "prob", newdata = dataA) # takes about a minute
-  
-  MLLA <- MLmetrics::MultiLogLoss(y_true = dataA$cuisine, y_pred = p_hat_matrix)
+  y_hat <- model_CART %>% 
+   predict(newdata=dataA, type="class") # takes about a minute
+  scoreA <- MLmetrics::Accuracy(y_true = dataA$cuisine, y_pred = y_hat)
   
   # Take mean
-  results$MLL[i] <- (MLLA + MLLB)/2
+  results$score[i] <- (scoreA + scoreB)/2
 }
 
 optimal <- results %>% 
-  arrange(MLL) %>% 
+  arrange(score) %>% 
   slice(1)
 cp_star <- optimal$cp
-MLL_star <- optimal$MLL
+score_star <- optimal$score
 optimal %>% 
   kable(digits=4)
 
-ggplot(results, aes(x=cp, y=MLL)) +
+ggplot(results, aes(x=cp, y=score)) +
   geom_point() +
-  labs(x="CART Complexity Parameter", y="Multi-Class Log Loss", title="Crossvalidation estimates of Multi-Class Log Loss for CART model") +
+  labs(x="CART Complexity Parameter", y="Categorization Accuracy", title="Crossvalidation estimates of Accuracy for CART model") +
   geom_vline(xintercept = cp_star, col="red")
 ```
 
