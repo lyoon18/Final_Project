@@ -1,16 +1,20 @@
 ---
-title: "Final Project: What's Cooking?"
+title: 'Final Project: What''s Cooking?'
 author: "Vickie Ip, Brendan Seto and Leonard Yoon"
 date: "December 22, 2017"
 output:
   html_document:
-    toc: true
+    code_fold: hide
+    df_print: kable
+    toc: yes
     toc_depth: 2
     toc_float:
-      collapsed: false
-      smooth_scroll: false
-    df_print: kable
-editor_options: 
+      collapsed: no
+      smooth_scroll: no
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+editor_options:
   chunk_output_type: console
 ---
 
@@ -20,6 +24,7 @@ library(tidyverse)
 library(jsonlite)
 library(gridExtra)
 library(randomForest)
+library(stringr)
 
 # Some customization.  You can alter or delete as desired (if you know what you are doing).
 knitr::opts_chunk$set(
@@ -42,18 +47,13 @@ Original Random Forest | 66.7% | > 2 hours | 6,715                  |
 CART             | 46.9%  | 10 minutes  | 6,715                     |
 RF: No Identifying | 68.0% | ~ 1.5 hours | 4,115                  |
 RF: String Cleaning | 69.4% | 15 minutes | 1,190                  |
+ 
 
-As shown in the table above, although CART has the shortest runtime, it also generates the lowest accuracy rate. Whereas for the 
-
-
+\newpage
 
 # Exploratory Data Analysis
   
 ## Data
-  
-```{r, cache=TRUE}
-food <- read_csv("data/recipe.csv")
-```
 
 ```{r, cache=TRUE}
 long <- fromJSON("data/train.json") %>% 
@@ -62,11 +62,10 @@ long <- fromJSON("data/train.json") %>%
 
 Our data came from the *"What's Cooking?"* Kaggle competition.  Each of the 39,774 rows was a recipe, with columns listing the different ingredients.  For some of the analysis we used one-hot-encoding to transform the data to binary indicators.  This lead to our final dataset consisting of 6,715 variables, one for each unique ingredient.  
 
-```{r, echo=FALSE}
+```{r}
 long1a <- long %>% 
   group_by(cuisine) %>% 
-  summarise(num = n()) %>% 
-  mutate(percent = num/nrow(food)*100)
+  summarise(num = n())
 
 ggplot(long1a, aes(x=reorder(cuisine, -num))) + 
   geom_bar(aes(y=num, fill = "orange3"), color = "black", stat = "identity")+
@@ -84,10 +83,10 @@ There were 20 total cuisines represented in our dataset.  Of these, Italian was 
 sample_n(long,5)
 ```
 
-As you can see from above, the original dataset was structured in that each row represented an ingredient in a recipe. This format makes it very difficult for us to run classification tree models so we decided to convert all the ingredients into binary indicators using One Hot Encoding.
+As you can see from above, the original dataset was structured in a way that each row represented an ingredient in a recipe. This format makes it very difficult for us to run classification tree models so we decided to convert all the ingredients into binary indicators using One-Hot Encoding.
 
 
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, eval=FALSE}
 # Create dummy variable
 dummies = model.matrix(~long$ingredients)
 food <- cbind(long[,c(1,2)], dummies) # this takes a few minutes
@@ -96,7 +95,7 @@ food <- cbind(long[,c(1,2)], dummies) # this takes a few minutes
 food <- food[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
 ```
 
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, eval=FALSE}
 # Make names pretty
 colnames(food)[5]
 substr(colnames(food)[5], 17, stop = nchar(colnames(food)[5]))
@@ -122,7 +121,7 @@ special <- unique %>% filter(kinds == 1)
 
 Of the 6,715 ingredients, 2,597 only appear in one type of cuisine.  We can use this information to perform an initial screening of our data, classifying any dish that has one of these ingredients.  This eliminates 5,438 of our recipes in the training set and 
 
-Some cuisines benefit more from this filtering.  14% of all recipes have an identifying ingredient, but 33% of brazilian and 26% of mexican cuisine did.  
+Some cuisines benefit more from this filtering. 14% of all recipes have an identifying ingredient, but 33% of brazilian and 26% of mexican cuisine did.  
 
 ```{r}
 # Number of Recipes with identifying ingredients
@@ -178,18 +177,13 @@ wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.ord
 
 As the wordcloud shows, the most commonly used ingredient is salt. Since 189,440 of these ingredients appear in all 20 cuisines, it might be a suitable idea to remove these ingredients from our training set.
 
+## String Cleaning Ingredients
 
-## Simplifying Ingredients
-
-Many of the ingredients listed in the data are variations of the same.  For instance:
-
-```{r}
-colnames(food)[c(4,5)]
-```
+Many of the ingredients listed in the data are variations of the same.  For instance: 1% low-fat milk and 2% reduced-fat milk
 
 It does not make sense to consider these two as distinct ingredients and their addition contributes to a very slow runtime for our model.  In an attempt to reduce our dimension size, we will try to combine these as best we can in a quick, automated way.  
 
-```{r}
+```{r,eval=FALSE}
 common <- data %>% filter(!stringr::str_detect(ingredients, " "))
 #n_distinct(common$ingredients)
 commonI <- common[!duplicated(common$ingredients), "ingredients"]
@@ -197,7 +191,7 @@ commonI <- common[!duplicated(common$ingredients), "ingredients"]
 
 We start by finding ingredients that consist of only one word.  We consider these ingredients "fundamental", unable to be simplified more.  For instance, both of the above variables should really be considered *"spinach"*. 
 
-```{r}
+```{r,eval=FALSE}
 allI <- data[!duplicated(data$ingredients), "ingredients"]
 # Need to avoid non-substrings like oil -> soil
 commonI <- ungroup(commonI)
@@ -230,13 +224,12 @@ similarity2 <- similarity %>%
 
 We have now mapped nearly 3,000 variables to 418 (total number of ingredients is 1,193).  This is a very significent reduction, even more than the identifying ingredient filter!
 
-```{r}
+```{r, eval=FALSE}
 commons <- merge(data, similarity2, by.x = "ingredients", by.y = "long", all.x = TRUE)
 
 commons <- commons %>% mutate(ingredients = ifelse(!is.na(short),short,ingredients)) %>% 
   select(ingredients,id, cuisine)
 ```
-
 
 
 # Models
@@ -245,18 +238,18 @@ commons <- commons %>% mutate(ingredients = ifelse(!is.na(short),short,ingredien
 
 First, some more data cleaning. Five cuisines didn't show up enough to be predicted by CART in any scenario that we tried (and we tried many!). We combined two of them (British and Irish) to form a larger category (UK) that can be predicted by CART and got rid of the other three cuisines.
 
-```{r}
+```{r, eval=FALSE}
 food$cuisine <- replace(food$cuisine, food$cuisine == "irish"|food$cuisine == "british", "UK") # add irish to british
 
 food <- food %>% 
   filter(cuisine != "brazilian") %>% 
   filter(cuisine != "russian") %>% 
-  filter(cuisine != "jamaican")  # These cuisines did not appear frequent enough
+  filter(cuisine != "jamaican")  # Did not appear frequent enough
 ```
 
 Here's the model that we ended up using. See crossvalidation below to figure out why.
 
-```{r}
+```{r, eval = FALSE}
 library(rpart)
 dataA <- food[sample(nrow(food),nrow(food)*.5),] 
 dataB <- anti_join(food, dataA, by = "id")
@@ -284,8 +277,10 @@ ggplot(t %>% filter(percent>0.1)) +
   guides(color = FALSE, size = FALSE)+scale_colour_gradient(low = "pink", high = "red4")
 ```
 
+Despite reducing the number of cuisines to 16, the confusion matrix shows that the CART model still lacks predictive accuracy. The model incorrectly predicts that the majority of the recipes are Italian. 
+
 ### Crossvalidation of ultimate model
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, eval=FALSE}
 # k = 2 fold crossvalidation
 
 # Consider a range of cp. I chose this through trial and error.
@@ -349,19 +344,12 @@ ggplot(results, aes(x=cp, y=MLL)) +
 
 ## Random Forest
 
-### Trims
-
-
-#### No Trim
-```{r, cache=TRUE, eval=FALSE}
-
 #### No Trim (Baseline Model)
-
+```{r, cache=TRUE, eval=FALSE}
 recipe <- food
 names(recipe) <- make.names(names(recipe))
 recipe <- recipe[, !duplicated(colnames(recipe), fromLast = TRUE)]
 recipe[] <- lapply(recipe, factor)
-
 
 sub <- recipe[sample(nrow(recipe),nrow(recipe)*.8),]
 sub2 <- anti_join(recipe, sub, by = "id")
@@ -391,17 +379,20 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   theme_bw()+
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
   scale_y_discrete(name="True", limits = rev(levels(as.factor(fit_large_graph2$true)))) +
-  labs(list(title = paste("Random Forest: Acc: ", acc1,"%, Runtime: >2 hr, Var: ",ncol(food), sep=""), x = "Guess"))+
+  labs(list(title = paste("Random Forest: Acc: 66.7%, Runtime: >2 hr, Var: ",ncol(trf), sep=""), x = "Guess"))+
   guides(color = FALSE, size = FALSE)+
   scale_colour_gradient(low = "pink", high = "red4")
 ```
 
 
-#### No Identifying
 
+With a higher predictive accuracy rate, the Random Forest model does a much better job than the CART model. The Random Forest model is also able to handle thousands of input variables without variable deletion, therefore we were able to make predictions for all 20 cuisines. However, the downside to this model is the runtime. With a runtime of more than 2 hours, this is much longer than the CART model, which only takes 10 minutes.
+
+## Trims
+
+#### Model With No Identifying Ingredients
 ```{r, eval=FALSE}
 identify <- filter(unique, kinds != 1)
-
 
 # Create dummy variable
 dummies = model.matrix(~identify$ingredients)
@@ -454,13 +445,15 @@ ggplot(fit_large_graph3 %>% filter(percent>0.1)) +
   geom_point(aes(guess, true, size = percent, color = percent)) +
   theme_bw()+
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
-  scale_y_discrete(name="True", limits = rev(levels(fit_large_graph$true))) +
-  labs(list(title = paste("Trimmed Random Forest 1: Acc: ",acc2,"%, Runtime: ~1hr 20min, Var: ",ncol(sub), sep = ""), x = "Guess"))+
+  scale_y_discrete(name="True", limits = rev(levels(fit_large_graph3$true))) +
+  labs(list(title = paste("Trimmed Random Forest 1: Acc: 68.0%, Runtime: ~1hr 20min, Var: ",ncol(noI), sep = ""), x = "Guess"))+
   guides(color = FALSE, size = FALSE)+
   scale_colour_gradient(low = "pink", high = "red4")
 ```
 
-#### Commons
+This RF model does slightly better than the original model. By eliminating the identifying ingredients, we were able to increase our predictive accuracy by 2%. However, with a runtime of around 80 minutes, this model is not much better than the original RF model.
+
+#### Model With String Cleaning
 
 ```{r, eval = FALSE}
 ids <- unique %>% group_by(id) %>% summarise
@@ -484,8 +477,7 @@ dumb[] <- lapply(dumb, factor)
 ```
 
 ```{r, cache=TRUE, eval=FALSE}
-fitC <- randomForest(cuisine ~. - id, data = dumb)
-# 15 min!!!
+fitC <- randomForest(cuisine ~. - id, data = dumb) # only takes around 15 minutes!
 fit_largeC <- fitC$confusion
 fitC_importance <- fitC$importance
 ```
@@ -509,11 +501,9 @@ addI <- identify %>%select(ingredients) %>% group_by(ingredients) %>%
 test <- rbind(test, addI)
 
 # Take out ingredients in test that are not in train
-
 test1 <- test %>% filter(ingredients %in% identify$ingredients)
 
-
-##### One hot encoding #####
+##### One hot encoding for test set #####
 # Create dummy variable
 dumb_test <- model.matrix(~test1$ingredients)
 dummy <- data.frame(test1[,c(2,3)], dumb_test)
@@ -544,20 +534,24 @@ write_csv(t2, "trimCRF.csv")
 tC <- read_csv("trimCRF.csv")
 fit_large_graph2 <- as.data.frame(tC) %>% gather(key = guess, value = percent, 2:nrow(tC))
 
+#Confusion Matrix
 ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   geom_point(aes(guess, as.character(true), size = percent, color = percent))+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
   scale_y_discrete(name="True", limits = rev(levels(fit_large_graph2$true))) +
-  labs(list(title = paste("Trimmed RF Common Ingred: Acc: ", acc,"%, Runtime: ~15 min!!!, Var: ",ncol(dumb), sep=""), x = "Guess"))+
+  labs(list(title = paste("Trimmed RF Common Ingred: Acc: 69.4%, Runtime: ~15 min!!!, Var: ",ncol(tC), sep=""), x = "Guess"))+
   guides(color = FALSE, size = FALSE)+
   scale_colour_gradient(low = "pink", high = "red4")
 ```
 
-# Create submission
 
-```{r}
-kaggle1 <- fromJSON("data/test.json") %>% 
+As shown in this confusion matrix plot, the trimmed Random Forest model achieved an accuracy rate of 69.8% and only took 15 minutes to run! All cuisines were predicted correctly, but at varying prediction strengths. For example, Italian was predicted to be 13 other cuisines, while all British and Spanish recipes were predicted correctly. 
+
+
+# Creating Submission Files
+```{r, eval = FALSE}
+kaggle <- fromJSON("data/train.json") %>% 
   unnest()
 
 # Add missing ingredients
@@ -599,13 +593,7 @@ write_csv(submission, "submission.csv")
 Note: All citations and references must be included here.
 
 
-
 # Supplementary materials
-
-Note: Anything else you've tried that you'd like to include, but isn't essential to
-the above, like other EDA's, other modeling approaches you've tried, etc. Please
-set the R code chunk `eval=FALSE` here so that default is that R Markdown
-doesn't run the code, but a user can flip this switch if they are curious.
 
 If we get rid of Italian, then Southern US becomes the cuisine that is over-predicted.
 
