@@ -34,7 +34,7 @@ library(jsonlite)
 ## Data
   
 ```{r, cache=TRUE}
-food <- read_csv("data/recipe.csv")
+food <- read_csv("recipe.csv")
 ```
 
 ```{r, cache=TRUE}
@@ -48,7 +48,7 @@ Our data came from the *"What's Cooking?"* Kaggle competition.  Each of the 39,7
 long1a <- long %>% 
   group_by(cuisine) %>% 
   summarise(num = n()) %>% 
-  mutate(percent = num/nrow(long)*100)
+  mutate(percent = num/nrow(food)*100)
 
 ggplot(long1a, aes(x=reorder(cuisine, -num))) + 
   geom_bar(aes(y=num, fill = "orange3"), color = "black", stat = "identity")+
@@ -66,12 +66,14 @@ There were 20 total cuisines represented in our dataset.  Of these, Italian was 
 sample_n(long,5)
 ```
 
-As you can see from above, the original dataset was structured in that each row represented an ingredient in a recipe. This format makes it very difficult for us to run classification tree models so we decided to convert all the ingredients into binary indicators using OneHot Encoding.
+As you can see from above, the original dataset was structured in that each row represented an ingredient in a recipe. This format makes it very difficult for us to run classification tree models so we decided to convert all the ingredients into binary indicators using One Hot Encoding.
+
+> CHECK THIS CODE >
 
 ```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
 # Create dummy variable
-dummies = model.matrix(~food$ingredients)
-food <- cbind(food[,c(1,2)], dummies) # this takes a few minutes
+dummies = model.matrix(~long$ingredients)
+food <- cbind(long[,c(1,2)], dummies) # this takes a few minutes
 
 # Group individual recipe
 food <- food[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
@@ -86,23 +88,30 @@ names <- c("id","cuisine",sapply(colnames(food)[c(-1,-2)], function(x) substr(x,
 colnames(food) <- names
 ```
 
-
+## Most Commonly Used Ingredients
 
 ```{r}
 # Wordcloud
-library(plyr)
+library(dplyr)
 library(wordcloud)
 library(tidyverse)
 library("RColorBrewer")
-food <- read_csv("food.csv")
-freq <- sort(table(food$ingred), decreasing = T)
+
+unique <- long %>% 
+  group_by(ingredients) %>% 
+  mutate(kinds = n_distinct(cuisine), n = n())
+
+#no_special <- unique %>% filter(kinds == 20)
+#no_special <- no_special[with(no_special, order(-n)), ]
+
+freq <- sort(table(long$ingred), decreasing = T)
 freq <- freq[1:80]
 freq <- as.data.frame(freq)
 colnames(freq) <- c("Ingredient", "Frequency")
 set.seed(101)
 wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.order=FALSE, rot.per = 0, colors=brewer.pal(8,"Dark2"))
 ```
-As the wordcloud shows, the most commonly used ingredient is salt. 
+As the wordcloud shows, the most commonly used ingredient is salt. Since 189,440 of these ingredients appear in all 20 cuisines, it might be a suitable idea to remove these ingredients from our training set.
 
 
 
@@ -110,16 +119,11 @@ As the wordcloud shows, the most commonly used ingredient is salt.
 
 ```{r}
 # Find the Identifying Ingredients
-unique <- long %>% 
-  group_by(ingredients) %>% 
-  mutate(kinds = n_distinct(cuisine), n = n())
-
 data <- unique %>% filter(kinds!=1)
 
 special <- unique %>% filter(kinds == 1)
 #n_distinct(special$ingredients)
 #n_distinct(special$id)
-
 ```
 
 Of the 6,715 ingredients, 2,597 only appear in one type of cuisine.  We can use this information to perform an initial screening of our data, classifying any dish that has one of these ingredients.  This eliminates 5,438 of our recipes in the training set and 
@@ -164,7 +168,7 @@ p <- ggplot(s, aes(x=reorder(cuisine, -n))) +
 grid.arrange(g,p, ncol=2, top = "Recipes with Identifying Ingredients")
 ```
 
-## Simple Ingredients
+## Simplifying Ingredients
 
 Many of the ingredients listed in the data are variations of the same.  For instance:
 
@@ -172,7 +176,7 @@ Many of the ingredients listed in the data are variations of the same.  For inst
 colnames(food)[c(4,5)]
 ```
 
-It does not make sense to consider these two as distinct ingredients and their addition contributes to a very slow runtime for our model.  In an attempt to reduce our dimention size, we will try to combine these as best we can in a quick, automated way.  
+It does not make sense to consider these two as distinct ingredients and their addition contributes to a very slow runtime for our model.  In an attempt to reduce our dimension size, we will try to combine these as best we can in a quick, automated way.  
 
 ```{r}
 common <- data %>% filter(!stringr::str_detect(ingredients, " "))
@@ -180,7 +184,7 @@ common <- data %>% filter(!stringr::str_detect(ingredients, " "))
 commonI <- common[!duplicated(common$ingredients), "ingredients"]
 ```
 
-We start by finding ingredients that consist of only one word.  We consider these ingredients "fundemental", unable to be simplified more.  For instance, both of the above variables should really be considered *"spinach"*. 
+We start by finding ingredients that consist of only one word.  We consider these ingredients "fundamental", unable to be simplified more.  For instance, both of the above variables should really be considered *"spinach"*. 
 
 ```{r}
 allI <- data[!duplicated(data$ingredients), "ingredients"]
