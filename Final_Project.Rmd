@@ -36,6 +36,16 @@ knitr::opts_chunk$set(
 
 **Results:**
 
+Model             | Accuracy (% correct) | Runtime   | Number of Variables Used |
+------------------|----------------------|-----------|--------------------------|
+Original Random Forest | 66.7% | > 2 hours | 6,715                  |
+CART             | 46.9%  | 10 minutes  | 6,715                     |
+RF: No Identifying | 68.0% | ~ 1.5 hours | 4,115                  |
+RF: String Cleaning | 69.4% | 15 minutes | 1,190                  |
+
+As shown in the table above, 
+
+
 
 # Exploratory Data Analysis
   
