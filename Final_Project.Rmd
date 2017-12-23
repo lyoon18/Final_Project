@@ -28,10 +28,11 @@ library(jsonlite)
 
 **Results:**
 
-# EDA
 
+# Exploratory Data Analysis
+  
 ## Data
-
+  
 ```{r, cache=TRUE}
 food <- read_csv("data/recipe.csv")
 ```
@@ -41,27 +42,9 @@ long <- fromJSON("data/train.json") %>%
   unnest()
 ```
 
-Our data came from the *"What's Cooking?"* Kaggle competition.  Each of the 39,774 rows was a recipe, with columns listing the different ingredients.  For some of the analysis we used one-hot-encoding to transform the data to binary indicators.  This lead to our final dataset consisting of 6715 variables, one for each unique ingredient.  
+Our data came from the *"What's Cooking?"* Kaggle competition.  Each of the 39,774 rows was a recipe, with columns listing the different ingredients.  For some of the analysis we used one-hot-encoding to transform the data to binary indicators.  This lead to our final dataset consisting of 6,715 variables, one for each unique ingredient.  
 
-```{r}
-# Wordcloud
-library(plyr)
-library(wordcloud)
-library(tidyverse)
-library("RColorBrewer")
-food <- read_csv("food.csv")
-freq <- sort(table(food$ingred), decreasing = T)
-freq <- freq[1:80]
-freq <- as.data.frame(freq)
-colnames(freq) <- c("Ingredient", "Frequency")
-set.seed(101)
-wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.order=FALSE, rot.per = 0, colors=brewer.pal(8,"Dark2"))
-```
-As the wordcloud shows, the most commonly used ingredient is salt. 
-
-There were 20 total cuisines represented in our dataset.  Of these, Italian was the most prevalent, making up nearly 20% of the total recipies.  
-
-```{r}
+```{r, echo=FALSE}
 long1a <- long %>% 
   group_by(cuisine) %>% 
   summarise(num = n()) %>% 
@@ -71,10 +54,19 @@ ggplot(long1a, aes(x=reorder(cuisine, -num))) +
   geom_bar(aes(y=num, fill = "orange3"), color = "black", stat = "identity")+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 60, hjust = 1))+
-  labs(list(title = "Cuisines By Number of Recipes", x = "Cuisine", y = "Recipes"))+
+  labs(list(title = "Cuisines By Number of Ingredients", x = "Cuisine", y = "Total # of Ingredients"))+
   guides(fill=FALSE)
 ```
+
+There were 20 total cuisines represented in our dataset.  Of these, Italian was the most prevalent, making up nearly 20% of the total recipes. 
+
 ## One Hot Encoding
+
+```{r}
+sample_n(long,5)
+```
+
+As you can see from above, the original dataset was structured in that each row represented an ingredient in a recipe. This format makes it very difficult for us to run classification tree models so we decided to convert all the ingredients into binary indicators using OneHot Encoding.
 
 ```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
 # Create dummy variable
@@ -93,6 +85,26 @@ substr(colnames(food)[5], 17, stop = nchar(colnames(food)[5]))
 names <- c("id","cuisine",sapply(colnames(food)[c(-1,-2)], function(x) substr(x, 17, stop = nchar(x))))
 colnames(food) <- names
 ```
+
+
+
+```{r}
+# Wordcloud
+library(plyr)
+library(wordcloud)
+library(tidyverse)
+library("RColorBrewer")
+food <- read_csv("food.csv")
+freq <- sort(table(food$ingred), decreasing = T)
+freq <- freq[1:80]
+freq <- as.data.frame(freq)
+colnames(freq) <- c("Ingredient", "Frequency")
+set.seed(101)
+wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.order=FALSE, rot.per = 0, colors=brewer.pal(8,"Dark2"))
+```
+As the wordcloud shows, the most commonly used ingredient is salt. 
+
+
 
 ## Identifying Ingredients
 
@@ -316,7 +328,6 @@ ggplot(results, aes(x=cp, y=MLL)) +
   labs(x="CART Complexity Parameter", y="Multi-Class Log Loss", title="Crossvalidation estimates of Multi-Class Log Loss for CART model") +
   geom_vline(xintercept = cp_star, col="red")
 ```
-
 
 
 ## Random Forest
