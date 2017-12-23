@@ -593,11 +593,6 @@ write_csv(submission, "submission.csv")
 ```
 
 
-# Citations and references
-
-Note: All citations and references must be included here.
-
-
 # Supplementary materials
 
 If we get rid of Italian, then Southern US becomes the cuisine that is over-predicted.
