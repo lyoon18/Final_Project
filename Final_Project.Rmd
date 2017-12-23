@@ -43,7 +43,21 @@ long <- fromJSON("data/train.json") %>%
 
 Our data came from the *"What's Cooking?"* Kaggle competition.  Each of the 39,774 rows was a recipe, with columns listing the different ingredients.  For some of the analysis we used one-hot-encoding to transform the data to binary indicators.  This lead to our final dataset consisting of 6715 variables, one for each unique ingredient.  
 
-[Ingredient word cloud]
+```{r}
+# Wordcloud
+library(plyr)
+library(wordcloud)
+library(tidyverse)
+library("RColorBrewer")
+food <- read_csv("food.csv")
+freq <- sort(table(food$ingred), decreasing = T)
+freq <- freq[1:80]
+freq <- as.data.frame(freq)
+colnames(freq) <- c("Ingredient", "Frequency")
+set.seed(101)
+wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.order=FALSE, rot.per = 0, colors=brewer.pal(8,"Dark2"))
+```
+As the wordcloud shows, the most commonly used ingredient is salt. 
 
 There were 20 total cuisines represented in our dataset.  Of these, Italian was the most prevalent, making up nearly 20% of the total recipies.  
 
