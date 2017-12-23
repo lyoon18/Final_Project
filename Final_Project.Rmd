@@ -36,6 +36,16 @@ knitr::opts_chunk$set(
 
 **Results:**
 
+Model             | Accuracy (% correct) | Runtime   | Number of Variables Used |
+------------------|----------------------|-----------|--------------------------|
+Original Random Forest | 66.7% | > 2 hours | 6,715                  |
+CART             | 46.9%  | 10 minutes  | 6,715                     |
+RF: No Identifying | 68.0% | ~ 1.5 hours | 4,115                  |
+RF: String Cleaning | 69.4% | 15 minutes | 1,190                  |
+
+As shown in the table above, although CART has the shortest runtime, it also generates the lowest accuracy rate. Whereas for the 
+
+
 
 # Exploratory Data Analysis
   
@@ -112,7 +122,7 @@ special <- unique %>% filter(kinds == 1)
 
 Of the 6,715 ingredients, 2,597 only appear in one type of cuisine.  We can use this information to perform an initial screening of our data, classifying any dish that has one of these ingredients.  This eliminates 5,438 of our recipes in the training set and 
 
-Some cuisines benefit more from this filtering.  14 percent of all recipes had an identifying ingredient, but 33% of brazilian and 26% of mexican cuisine did.  
+Some cuisines benefit more from this filtering.  14% of all recipes have an identifying ingredient, but 33% of brazilian and 26% of mexican cuisine did.  
 
 ```{r}
 # Number of Recipes with identifying ingredients
@@ -134,7 +144,6 @@ s <- merge(s, num, by = "cuisine")
 s <- s %>% 
   mutate(percent = n/recipes*100)
 total <- s %>% summarise(n = sum(n), recipes = sum(recipes), percent = n/recipes*100)
-
 
 g <- ggplot(s, aes(x=reorder(cuisine, -n))) + 
   geom_bar(aes(y=n), fill = "orange3", color = "black", stat = "identity")+
@@ -249,16 +258,13 @@ Here's the model that we ended up using. See crossvalidation below to figure out
 
 ```{r}
 library(rpart)
-library(tictoc)
 dataA <- food[sample(nrow(food),nrow(food)*.5),] 
 dataB <- anti_join(food, dataA, by = "id")
 
 cp_star <- .0013 # see CV section for this
 model_formula <- as.formula(cuisine ~ . - id)
 tree_parameters <- rpart.control(maxdepth = 20, cp = cp_star, minsplit = 1, minbucket = 1) 
-tic()
-model_CART <- rpart(model_formula, data = dataA, control=tree_parameters) # takes a LONG time
-toc()
+model_CART <- rpart(model_formula, data = dataA, control=tree_parameters) # takes 10 minutes
 
 # Score/error
 y_hat <- model_CART %>% 
