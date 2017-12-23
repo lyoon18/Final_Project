@@ -268,9 +268,13 @@ t <- as.data.frame(conf.matrix) %>%
   mutate(total = sum(Freq)) %>% 
   ungroup() %>% 
   mutate(percent = Freq/total)
+```
 
-ggplot(t %>% filter(percent>0.1)) +
-  geom_point(aes(y_pred, y_true, size = percent, color = percent)) +
+```{r}
+t <- read_csv("CARTconfmatrix.csv")
+
+ggplot(t %>% filter(Freq>0.1)) +
+  geom_point(aes(y_pred, y_true, size = Freq, color = Freq)) +
   theme_bw()+
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) +scale_y_discrete(name="True", limits = rev(levels(t$y_true))) +
   labs(list(title = "CART Confusion Matrix", x = "Guess"))+
@@ -340,6 +344,7 @@ ggplot(results, aes(x=cp, y=MLL)) +
   labs(x="CART Complexity Parameter", y="Multi-Class Log Loss", title="Crossvalidation estimates of Multi-Class Log Loss for CART model") +
   geom_vline(xintercept = cp_star, col="red")
 ```
+
 
 
 ## Random Forest
