@@ -46,8 +46,7 @@ Original Random Forest | 66.7% | > 2 hours | 6,715                  |
 CART             | 46.9%  | 10 minutes  | 6,715                     |
 RF: No Identifying | 68.0% | ~ 1.5 hours | 4,115                  |
 RF: String Cleaning | 69.4% | 15 minutes | 1,190                  |
-
-As shown in the table above, although CART has the shortest runtime, it also generates the lowest accuracy rate. Whereas for the 
+ 
 
 
 # Exploratory Data Analysis
@@ -121,7 +120,7 @@ special <- unique %>% filter(kinds == 1)
 
 Of the 6,715 ingredients, 2,597 only appear in one type of cuisine.  We can use this information to perform an initial screening of our data, classifying any dish that has one of these ingredients.  This eliminates 5,438 of our recipes in the training set and 
 
-Some cuisines benefit more from this filtering.  14% of all recipes have an identifying ingredient, but 33% of brazilian and 26% of mexican cuisine did.  
+Some cuisines benefit more from this filtering. 14% of all recipes have an identifying ingredient, but 33% of brazilian and 26% of mexican cuisine did.  
 
 ```{r, eval = FALSE}
 # Number of Recipes with identifying ingredients
@@ -178,7 +177,7 @@ wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.ord
 As the wordcloud shows, the most commonly used ingredient is salt. Since 189,440 of these ingredients appear in all 20 cuisines, it might be a suitable idea to remove these ingredients from our training set.
 
 
-## String Cleaning Ingredient Variables
+## String Cleaning Ingredients
 
 Many of the ingredients listed in the data are variations of the same.  For instance:
 
@@ -344,13 +343,12 @@ ggplot(results, aes(x=cp, y=MLL)) +
   labs(x="CART Complexity Parameter", y="Multi-Class Log Loss", title="Crossvalidation estimates of Multi-Class Log Loss for CART model") +
   geom_vline(xintercept = cp_star, col="red")
 ```
-![CART Confusion Matrix] (http://ibb.co/e8Bq5R?raw=true)
+Link to CART Confusion MAtrix: (http://ibb.co/e8Bq5R?raw=true)
+
 
 
 
 ## Random Forest
-
-### Trims
 
 #### No Trim (Baseline Model)
 ```{r, cache=TRUE, eval=FALSE}
@@ -392,8 +390,10 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   scale_colour_gradient(low = "pink", high = "red4")
 ```
 
-!(http://ibb.co/n4d9zm)
+Link to Original Random Forest Confusion MAtrix: http://ibb.co/n4d9zm
 
+
+## Trims
 
 #### Model With No Identifying Ingredients
 
@@ -483,8 +483,7 @@ dumb[] <- lapply(dumb, factor)
 ```
 
 ```{r, cache=TRUE, eval=FALSE}
-fitC <- randomForest(cuisine ~. - id, data = dumb)
-# 15 min!!!
+fitC <- randomForest(cuisine ~. - id, data = dumb) # only takes around 15 minutes!
 fit_largeC <- fitC$confusion
 fitC_importance <- fitC$importance
 ```
@@ -508,10 +507,9 @@ addI <- identify %>%select(ingredients) %>% group_by(ingredients) %>%
 test <- rbind(test, addI)
 
 # Take out ingredients in test that are not in train
-
 test1 <- test %>% filter(ingredients %in% identify$ingredients)
 
-##### One hot encoding #####
+##### One hot encoding for test set #####
 # Create dummy variable
 dumb_test <- model.matrix(~test1$ingredients)
 dummy <- data.frame(test1[,c(2,3)], dumb_test)
@@ -542,6 +540,7 @@ write_csv(t2, "trimCRF.csv")
 tC <- read_csv("trimCRF.csv")
 fit_large_graph2 <- as.data.frame(tC) %>% gather(key = guess, value = percent, 2:nrow(tC))
 
+#Confusion Matrix
 ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   geom_point(aes(guess, as.character(true), size = percent, color = percent))+
   theme_bw()+
@@ -552,12 +551,9 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   scale_colour_gradient(low = "pink", high = "red4")
 ```
 
-![Trimmed RF Confusion Matrix] (RFTrimmed2CM.png)
+Link to Confusion Matrix: http://ibb.co/he9A5R)
 
-(http://ibb.co/he9A5R)
-
-
-As shown in the confusion matrix plot above, this trimmed Random Forest model achieved an accuracy rate of 69.8% and only took 15 minutes to run! All cuisines were predicted correctly, but at varying prediction strengths. For example, Italian was predicted to be 13 other cuisines, while all British and Spanish recipes were predicted correctly. 
+As shown in this confusion matrix plot, the trimmed Random Forest model achieved an accuracy rate of 69.8% and only took 15 minutes to run! All cuisines were predicted correctly, but at varying prediction strengths. For example, Italian was predicted to be 13 other cuisines, while all British and Spanish recipes were predicted correctly. 
 
 
 # Creating Submission Files
@@ -590,11 +586,6 @@ Note: All citations and references must be included here.
 
 
 # Supplementary materials
-
-Note: Anything else you've tried that you'd like to include, but isn't essential to
-the above, like other EDA's, other modeling approaches you've tried, etc. Please
-set the R code chunk `eval=FALSE` here so that default is that R Markdown
-doesn't run the code, but a user can flip this switch if they are curious.
 
 If we get rid of Italian, then Southern US becomes the cuisine that is over-predicted.
 
