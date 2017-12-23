@@ -1,20 +1,23 @@
 ---
-title: "Final Project: What's Cooking?"
+title: 'Final Project: What''s Cooking?'
 author: "Vickie Ip, Brendan Seto and Leonard Yoon"
 date: "December 22, 2017"
 output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
   html_document:
-    toc: true
+    df_print: kable
+    toc: yes
     toc_depth: 2
     toc_float:
-      collapsed: false
-      smooth_scroll: false
-    df_print: kable
-editor_options: 
+      collapsed: no
+      smooth_scroll: no
+editor_options:
   chunk_output_type: console
 ---
 
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE, eval=FALSE}
 # install.packages("jsonlite")
 library(tidyverse)
 library(jsonlite)
@@ -51,14 +54,14 @@ As shown in the table above, although CART has the shortest runtime, it also gen
   
 ## Data
 
-```{r, cache=TRUE}
+```{r, cache=TRUE, eval = FALSE}
 long <- fromJSON("data/train.json") %>% 
   unnest()
 ```
 
 Our data came from the *"What's Cooking?"* Kaggle competition.  Each of the 39,774 rows was a recipe, with columns listing the different ingredients.  For some of the analysis we used one-hot-encoding to transform the data to binary indicators.  This lead to our final dataset consisting of 6,715 variables, one for each unique ingredient.  
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, eval = FALSE}
 long1a <- long %>% 
   group_by(cuisine) %>% 
   summarise(num = n()) %>% 
@@ -76,14 +79,14 @@ There were 20 total cuisines represented in our dataset.  Of these, Italian was 
 
 ## One Hot Encoding
 
-```{r}
+```{r, eval = FALSE}
 sample_n(long,5)
 ```
 
 As you can see from above, the original dataset was structured in that each row represented an ingredient in a recipe. This format makes it very difficult for us to run classification tree models so we decided to convert all the ingredients into binary indicators using One-Hot Encoding.
 
 
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE, eval = FALSE}
 # Create dummy variable
 dummies = model.matrix(~long$ingredients)
 food <- cbind(long[,c(1,2)], dummies) # this takes a few minutes
@@ -92,7 +95,7 @@ food <- cbind(long[,c(1,2)], dummies) # this takes a few minutes
 food <- food[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
 ```
 
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE, eval = FALSE}
 # Make names pretty
 colnames(food)[5]
 substr(colnames(food)[5], 17, stop = nchar(colnames(food)[5]))
@@ -103,7 +106,7 @@ colnames(food) <- names
 
 ## Identifying Ingredients
 
-```{r}
+```{r, eval = FALSE}
 # Find the Identifying Ingredients
 unique <- long %>% 
   group_by(ingredients) %>% 
@@ -120,7 +123,7 @@ Of the 6,715 ingredients, 2,597 only appear in one type of cuisine.  We can use 
 
 Some cuisines benefit more from this filtering.  14% of all recipes have an identifying ingredient, but 33% of brazilian and 26% of mexican cuisine did.  
 
-```{r}
+```{r, eval = FALSE}
 # Number of Recipes with identifying ingredients
 s<- special %>% 
   group_by(id, cuisine) %>% 
@@ -159,7 +162,7 @@ grid.arrange(g,p, ncol=2, top = "Recipes with Identifying Ingredients")
 
 ## Most Commonly Used Ingredients
 
-```{r}
+```{r, eval = FALSE}
 # Wordcloud
 library(wordcloud)
 library("RColorBrewer")
@@ -179,13 +182,13 @@ As the wordcloud shows, the most commonly used ingredient is salt. Since 189,440
 
 Many of the ingredients listed in the data are variations of the same.  For instance:
 
-```{r}
+```{r, eval = FALSE}
 colnames(food)[c(4,5)]
 ```
 
 It does not make sense to consider these two as distinct ingredients and their addition contributes to a very slow runtime for our model.  In an attempt to reduce our dimension size, we will try to combine these as best we can in a quick, automated way.  
 
-```{r}
+```{r, eval = FALSE}
 common <- data %>% filter(!stringr::str_detect(ingredients, " "))
 #n_distinct(common$ingredients)
 commonI <- common[!duplicated(common$ingredients), "ingredients"]
@@ -193,7 +196,7 @@ commonI <- common[!duplicated(common$ingredients), "ingredients"]
 
 We start by finding ingredients that consist of only one word.  We consider these ingredients "fundamental", unable to be simplified more.  For instance, both of the above variables should really be considered *"spinach"*. 
 
-```{r}
+```{r, eval = FALSE}
 allI <- data[!duplicated(data$ingredients), "ingredients"]
 # Need to avoid non-substrings like oil -> soil
 commonI <- ungroup(commonI)
@@ -226,7 +229,7 @@ similarity2 <- similarity %>%
 
 We have now mapped nearly 3,000 variables to 418 (total number of ingredients is 1,193).  This is a very significent reduction, even more than the identifying ingredient filter!
 
-```{r}
+```{r, eval=FALSE}
 commons <- merge(data, similarity2, by.x = "ingredients", by.y = "long", all.x = TRUE)
 
 commons <- commons %>% mutate(ingredients = ifelse(!is.na(short),short,ingredients)) %>% 
@@ -241,7 +244,7 @@ commons <- commons %>% mutate(ingredients = ifelse(!is.na(short),short,ingredien
 
 First, some more data cleaning. Five cuisines didn't show up enough to be predicted by CART in any scenario that we tried (and we tried many!). We combined two of them (British and Irish) to form a larger category (UK) that can be predicted by CART and got rid of the other three cuisines.
 
-```{r}
+```{r, eval = FALSE}
 food$cuisine <- replace(food$cuisine, food$cuisine == "irish"|food$cuisine == "british", "UK") # add irish to british
 
 food <- food %>% 
@@ -252,7 +255,7 @@ food <- food %>%
 
 Here's the model that we ended up using. See crossvalidation below to figure out why.
 
-```{r}
+```{r, eval = FALSE}
 library(rpart)
 dataA <- food[sample(nrow(food),nrow(food)*.5),] 
 dataB <- anti_join(food, dataA, by = "id")
@@ -281,7 +284,7 @@ ggplot(t %>% filter(percent>0.1)) +
 ```
 
 ### Crossvalidation of ultimate model
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE, eval=FALSE}
 # k = 2 fold crossvalidation
 
 # Consider a range of cp. I chose this through trial and error.
@@ -341,6 +344,8 @@ ggplot(results, aes(x=cp, y=MLL)) +
   labs(x="CART Complexity Parameter", y="Multi-Class Log Loss", title="Crossvalidation estimates of Multi-Class Log Loss for CART model") +
   geom_vline(xintercept = cp_star, col="red")
 ```
+![CART Confusion Matrix] (http://ibb.co/e8Bq5R)
+
 
 
 ## Random Forest
@@ -373,7 +378,7 @@ colnames(trf)[2:ncol(trf)] <- stringr::str_sub(colnames(trf)[2:ncol(t2)],8,-1)
 #write_csv(trf, "RF.csv")
 ```
 
-```{r, warning=FALSE}
+```{r, warning=FALSE, eval = FALSE}
 trf <- read_csv("RF.csv")
 fit_large_graph2 <- as.data.frame(trf) %>% gather(key = guess, value = percent, 2:nrow(trf))
 
@@ -386,6 +391,8 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   guides(color = FALSE, size = FALSE)+
   scale_colour_gradient(low = "pink", high = "red4")
 ```
+
+!(http://ibb.co/n4d9zm)
 
 
 #### Model With No Identifying Ingredients
@@ -435,7 +442,7 @@ t <-   t %>%
 write_csv(t, "trim_NoI_RF.csv")
 ```
 
-```{r}
+```{r , eval = FALSE}
 noI <- read_csv("trim_NoI_RF.csv")
 fit_large_graph3 <- noI %>% gather(key = guess, value = percent, 2:ncol(noI))
 
@@ -449,6 +456,8 @@ ggplot(fit_large_graph3 %>% filter(percent>0.1)) +
   guides(color = FALSE, size = FALSE)+
   scale_colour_gradient(low = "pink", high = "red4")
 ```
+!(http://ibb.co/kdi3QR)
+
 
 #### Model With String Cleaning
 
@@ -502,7 +511,6 @@ test <- rbind(test, addI)
 
 test1 <- test %>% filter(ingredients %in% identify$ingredients)
 
-
 ##### One hot encoding #####
 # Create dummy variable
 dumb_test <- model.matrix(~test1$ingredients)
@@ -530,7 +538,7 @@ colnames(t2)[2:ncol(t2)] <- stringr::str_sub(colnames(t2)[2:ncol(t2)],8,-1)
 write_csv(t2, "trimCRF.csv")
 ```
 
-```{r}
+```{r, eval = FALSE}
 tC <- read_csv("trimCRF.csv")
 fit_large_graph2 <- as.data.frame(tC) %>% gather(key = guess, value = percent, 2:nrow(tC))
 
@@ -542,15 +550,16 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   labs(list(title = paste("Trimmed RF Common Ingred: Acc: ", acc,"%, Runtime: ~15 min!!!, Var: ",ncol(dumb), sep=""), x = "Guess"))+
   guides(color = FALSE, size = FALSE)+
   scale_colour_gradient(low = "pink", high = "red4")
-
 ```
+
+!(http://ibb.co/he9A5R)
+
 
 As shown in the confusion matrix plot above, this trimmed Random Forest model achieved an accuracy rate of 69.8% and only took 15 minutes to run! All cuisines were predicted correctly, but at varying prediction strengths. For example, Italian was predicted to be 13 other cuisines, while all British and Spanish recipes were predicted correctly. 
 
 
-
 # Creating Submission Files
-```{r}
+```{r, eval = FALSE}
 kaggle <- fromJSON("data/train.json") %>% 
   unnest()
 
@@ -576,7 +585,6 @@ predictK1 <- predict(fit, kaggle)
 # Citations and references
 
 Note: All citations and references must be included here.
-
 
 
 # Supplementary materials
