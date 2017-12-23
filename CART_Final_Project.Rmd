@@ -1,0 +1,273 @@
+---
+title: "CART for Final Project"
+author: "Vickie Ip, Brendan Seto and Leonard Yoon"
+date: "December 23, 2017"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    df_print: kable
+editor_options: 
+  chunk_output_type: console
+---
+
+## Load all packages
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+# install.packages("jsonlite")
+library(tidyverse)
+library(jsonlite)
+library(rpart)
+library(knitr)
+```
+
+
+
+## Load data
+
+Please delete all "notes" before submission.
+
+Note: CSV/data files should be read assuming they are in the `data` folder. In
+other words, load data via `read_csv("data/CSV_NAME.csv")` and not via
+`read_csv("/Users/aykim/Documents/MATH495/Final_Project/data/CSV_NAME.csv")`
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+# read_json("train.json")
+food <- fromJSON("data/train.json") %>% 
+ unnest()
+```
+
+## EDA visualizations and tables
+
+Note: If you had to illustrate using no modelling but only graphs and tables which
+variables have the most predictive power, which would you include?
+
+* Perform a cross-validation on only the final/ultimate model used for your
+submission.
+* The "score" in question should be the same as used to compute the Kaggle
+leaderboard. In other words, your estimated score should be roughly equal to the
+score returned by Kaggle after your submission.
+
+### One hot encoding
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+# Create dummy variable
+dummies = model.matrix(~food$ingredients)
+food <- cbind(food[,c(1,2)], dummies) # this takes a few minutes
+
+# Group individual recipe
+food <- food[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+# Make names pretty
+colnames(food)[5]
+substr(colnames(food)[5], 17, stop = nchar(colnames(food)[5]))
+
+names <- c("id","cuisine",sapply(colnames(food)[c(-1,-2)], function(x) substr(x, 17, stop = nchar(x))))
+colnames(food) <- names
+```
+
+## CART
+
+First, some more data cleaning. Five cuisines didn't show up enough to be predicted by CART in any scenario that I tried (and I tried many!). I combined two of them (British and Irish) to form a larger category (UK) that can be predicted by CART and got rid of the other three cuisines.
+
+```{r}
+food$cuisine <- replace(food$cuisine, food$cuisine == "irish"|food$cuisine == "british", "UK") # add irish to british
+
+food <- food %>% filter(cuisine != "brazilian") # not frequent enough
+food <- food %>% filter(cuisine != "russian") # not frequent enough
+food <- food %>% filter(cuisine != "jamaican") # not frequent enough
+```
+
+Here's the model that I end up using. See crossvalidation below to figure out why.
+
+```{r}
+dataA <- food[sample(nrow(food),nrow(food)*.5),] 
+dataB <- anti_join(food, dataA, by = "id")
+
+cp_star <- .0013 # see cv section for this
+model_formula <- as.formula(cuisine ~ . - id)
+tree_parameters <- rpart.control(maxdepth = 20, cp = cp_star, minsplit = 1, minbucket = 1) 
+model_CART <- rpart(model_formula, data = dataA, control=tree_parameters) # takes a LONG time
+
+# Score/error
+y_hat <- model_CART %>% 
+  predict(newdata=dataB, type="class") # takes about a minutes
+score <- MLmetrics::Accuracy(y_true = dataB$cuisine, y_pred = y_hat)*100
+
+# Confusion Matrix
+conf.matrix <- MLmetrics::ConfusionMatrix(y_true = dataB$cuisine, y_pred = y_hat)
+t <- as.data.frame(conf.matrix) %>% 
+  group_by(y_true) %>% 
+  mutate(total = sum(Freq)) %>% 
+  ungroup() %>% 
+  mutate(percent = Freq/total)
+
+ggplot(t %>% filter(percent>0.1)) +
+  geom_point(aes(y_pred, y_true, size = percent, color = percent)) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +scale_y_discrete(name="True", limits = rev(levels(t$y_true))) +
+  labs(list(title = "CART Confusion Matrix", x = "Guess"))+
+  guides(color = FALSE, size = FALSE)+scale_colour_gradient(low = "pink", high = "red4")
+```
+
+The categorization accuracy for this model on our pseudo-test set is `r score`%.
+
+## Crossvalidation of ultimate model
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+# k = 2 fold crossvalidation
+
+# Consider a range of cp. I chose this through trial and error.
+cp_vector <- seq(from = .0007, to = .0025, by = .0003)
+
+# Save results here
+results <- data_frame(
+  cp = cp_vector,
+  score = 0 # classification accuracy
+)
+
+model_formula <- as.formula(cuisine ~ . - id)
+
+set.seed(18)
+for(i in 1:length(cp_vector)){
+  # Note: these two datasets are disjoint
+  dataA <- food[sample(nrow(food),nrow(food)*.5),] 
+  dataB <- anti_join(food, dataA, by = "id")
+  
+  # maxdepth being large is what causes the thing to take so long
+  # as maxdepth increases, we get predictions of more cuisines
+  # maxdepth = 20 is doing very well and takes about 10 minutes to run
+
+  # Fit model onto A, get predictions for B, compute MLL for B  
+  tree_parameters <- rpart.control(maxdepth = 20, cp = cp_vector[i], minsplit = 1, minbucket = 1) 
+  model_CART <- rpart(model_formula, data = dataA, control=tree_parameters) # takes a LONG time
+
+  y_hat <- model_CART %>% 
+    predict(newdata=dataB, type="class") # takes about a minute
+  scoreB <- MLmetrics::Accuracy(y_true = dataB$cuisine, y_pred = y_hat)
+
+  # Fit model onto B, get predictions for A, compute MLL for A
+  
+  tree_parameters <- rpart.control(maxdepth = 20, cp = cp_vector[i], minsplit = 1, minbucket = 1) 
+  model_CART <- rpart(model_formula, data = dataB, control=tree_parameters) # takes a LONG time
+
+  y_hat <- model_CART %>% 
+   predict(newdata=dataA, type="class") # takes about a minute
+  scoreA <- MLmetrics::Accuracy(y_true = dataA$cuisine, y_pred = y_hat)
+  
+  # Take mean
+  results$score[i] <- (scoreA + scoreB)/2
+}
+
+optimal <- results %>% 
+  arrange(score) %>% 
+  slice(1)
+cp_star <- optimal$cp
+score_star <- optimal$score
+optimal %>% 
+  kable(digits=4)
+
+ggplot(results, aes(x=cp, y=score)) +
+  geom_point() +
+  labs(x="CART Complexity Parameter", y="Categorization Accuracy", title="Crossvalidation estimates of Accuracy for CART model") +
+  geom_vline(xintercept = cp_star, col="red")
+```
+
+## Create submission
+
+Note: Output a CSV using `write_csv(DATAFRAME_NAME, path="data/SUBMISSION_NAME.csv")`
+that is Kaggle submitable. This submission should return a Kaggle score that is
+close to your crossvalidated score.
+
+> LY: I need to create a submission file for Kaggle with the crossvalidated CART.
+
+## Citations and references
+
+Note: All citations and references must be included here.
+
+CART references: http://blog.revolutionanalytics.com/2013/06/plotting-classification-and-regression-trees-with-plotrpart.html and http://www.milbo.org/doc/prp.pdf
+
+## Supplementary materials
+
+Note: Anything else you've tried that you'd like to include, but isn't essential to
+the above, like other EDA's, other modeling approaches you've tried, etc. Please
+set the R code chunk `eval=FALSE` here so that default is that R Markdown
+doesn't run the code, but a user can flip this switch if they are curious.
+
+If we get rid of Italian, then Southern US becomes the cuisine that is over-predicted.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+food2 <- food %>% filter(cuisine != "italian")
+sub_2 <- food2[sample(nrow(food2),nrow(food2)*.5),]
+sub2_2 <- anti_join(food2, sub, by = "id")
+model_CART_2 <- rpart(model_formula, data = sub_2, control=tree_parameters) # takes 10 minutes
+
+# Score/error
+p_hat_matrix_2 <- model_CART_2 %>% 
+  predict(type = "prob", newdata = sub2_2)
+MLmetrics::MultiLogLoss(y_true = sub2_2$cuisine, y_pred = p_hat_matrix_2)
+y_hat_2 <- model_CART_2 %>% 
+  predict(newdata=sub2_2, type="class")
+MLmetrics::Accuracy(y_true = sub2_2$cuisine, y_pred = y_hat_2)
+conf.matrix_2 <- MLmetrics::ConfusionMatrix(y_true = sub2_2$cuisine, y_pred = y_hat_2)
+t2 <- as.data.frame(conf.matrix_2) %>% 
+  group_by(y_true) %>% 
+  mutate(total = sum(Freq)) %>% 
+  ungroup() %>% 
+  mutate(percent = Freq/total)
+
+ggplot(t2 %>% filter(percent>0.1)) +
+  geom_point(aes(y_pred, y_true, size = percent, color = percent)) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +scale_y_discrete(name="True", limits = rev(levels(t$y_true))) +
+  labs(list(title = "CART Confusion Matrix", x = "Guess"))+
+  guides(color = FALSE, size = FALSE)+scale_colour_gradient(low = "pink", high = "red4")
+
+```
+
+If we get rid of Southern US, then Mexican becomes the cuisine that is over-predicted.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+food3 <- food2 %>% filter(cuisine != "southern_us")
+sub_3 <- food3[sample(nrow(food3),nrow(food3)*.5),]
+sub2_3 <- anti_join(food3, sub, by = "id")
+model_CART_3 <- rpart(model_formula, data = sub_3, control=tree_parameters) # takes 10 minutes
+
+# Score/error
+p_hat_matrix_3 <- model_CART_3 %>% 
+  predict(type = "prob", newdata = sub2_3)
+MLmetrics::MultiLogLoss(y_true = sub2_3$cuisine, y_pred = p_hat_matrix_3)
+y_hat_3 <- model_CART_3 %>% 
+  predict(newdata=sub2_3, type="class")
+MLmetrics::Accuracy(y_true = sub2_3$cuisine, y_pred = y_hat_3)
+conf.matrix_3 <- MLmetrics::ConfusionMatrix(y_true = sub2_3$cuisine, y_pred = y_hat_3)
+t3 <- as.data.frame(conf.matrix_3) %>% 
+  group_by(y_true) %>% 
+  mutate(total = sum(Freq)) %>% 
+  ungroup() %>% 
+  mutate(percent = Freq/total)
+
+ggplot(t3 %>% filter(percent>0.1)) +
+  geom_point(aes(y_pred, y_true, size = percent, color = percent)) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +scale_y_discrete(name="True", limits = rev(levels(t$y_true))) +
+  labs(list(title = "CART Confusion Matrix", x = "Guess"))+
+  guides(color = FALSE, size = FALSE)+scale_colour_gradient(low = "pink", high = "red4")
+```
+
+So it seems like there is no escape from this phenomenon of one category getting everything to predict to it! Not sure why it does this.
+
+The table below was helpful for debugging some things. It shows all of the cuisines and how many ingredients in the data set are attributed to each cuisine.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+table.of.stuff <- food$cuisine %>% table() %>% sort()
+table.of.stuff <- as.data.frame(table.of.stuff)
+# table.of.stuff <- table.of.stuff %>% filter(Freq > 1000)
+table.of.stuff <- table.of.stuff %>% rename()
+table.of.stuff
+```

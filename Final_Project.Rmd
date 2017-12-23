@@ -36,12 +36,13 @@ knitr::opts_chunk$set(
 
 **Results:**
 
-# EDA
 
+# Exploratory Data Analysis
+  
 ## Data
-
+  
 ```{r, cache=TRUE}
-food <- read_csv("data/recipe.csv")
+food <- read_csv("recipe.csv")
 ```
 
 ```{r, cache=TRUE}
@@ -49,40 +50,88 @@ long <- fromJSON("data/train.json") %>%
   unnest()
 ```
 
-Our data came from the *"What's Cooking?"* Kaggle competition.  Each of the 39,774 rows was a recipe, with columns listing the different ingredients.  For some of the analysis we used one-hot-encoding to transform the data to binary indicators.  This lead to our final dataset consisting of 6715 variables, one for each unique ingredient.  
+Our data came from the *"What's Cooking?"* Kaggle competition.  Each of the 39,774 rows was a recipe, with columns listing the different ingredients.  For some of the analysis we used one-hot-encoding to transform the data to binary indicators.  This lead to our final dataset consisting of 6,715 variables, one for each unique ingredient.  
 
-[Ingredient word cloud]
-
-There were 20 total cuisines represented in our dataset.  Of these, Italian was the most prevalent, making up nearly 20% of the total recipies.  
-
-```{r}
+```{r, echo=FALSE}
 long1a <- long %>% 
   group_by(cuisine) %>% 
   summarise(num = n()) %>% 
-  mutate(percent = num/nrow(long)*100)
+  mutate(percent = num/nrow(food)*100)
 
 ggplot(long1a, aes(x=reorder(cuisine, -num))) + 
   geom_bar(aes(y=num, fill = "orange3"), color = "black", stat = "identity")+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 60, hjust = 1))+
-  labs(list(title = "Cuisines By Number of Recipes", x = "Cuisine", y = "Recipes"))+
+  labs(list(title = "Cuisines By Number of Ingredients", x = "Cuisine", y = "Total # of Ingredients"))+
   guides(fill=FALSE)
 ```
+
+There were 20 total cuisines represented in our dataset.  Of these, Italian was the most prevalent, making up nearly 20% of the total recipes. 
+
 ## One Hot Encoding
-## Identifying Ingredients
 
 ```{r}
-# Find the Identifying Ingredients
+sample_n(long,5)
+```
+
+As you can see from above, the original dataset was structured in that each row represented an ingredient in a recipe. This format makes it very difficult for us to run classification tree models so we decided to convert all the ingredients into binary indicators using One Hot Encoding.
+
+> CHECK THIS CODE >
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+# Create dummy variable
+dummies = model.matrix(~long$ingredients)
+food <- cbind(long[,c(1,2)], dummies) # this takes a few minutes
+
+# Group individual recipe
+food <- food[,-3] %>% group_by(id, cuisine) %>% summarise_all(sum)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+# Make names pretty
+colnames(food)[5]
+substr(colnames(food)[5], 17, stop = nchar(colnames(food)[5]))
+
+names <- c("id","cuisine",sapply(colnames(food)[c(-1,-2)], function(x) substr(x, 17, stop = nchar(x))))
+colnames(food) <- names
+```
+
+## Most Commonly Used Ingredients
+
+```{r}
+# Wordcloud
+library(dplyr)
+library(wordcloud)
+library(tidyverse)
+library("RColorBrewer")
+
 unique <- long %>% 
   group_by(ingredients) %>% 
   mutate(kinds = n_distinct(cuisine), n = n())
 
+#no_special <- unique %>% filter(kinds == 20)
+#no_special <- no_special[with(no_special, order(-n)), ]
+
+freq <- sort(table(long$ingred), decreasing = T)
+freq <- freq[1:80]
+freq <- as.data.frame(freq)
+colnames(freq) <- c("Ingredient", "Frequency")
+set.seed(101)
+wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.order=FALSE, rot.per = 0, colors=brewer.pal(8,"Dark2"))
+```
+As the wordcloud shows, the most commonly used ingredient is salt. Since 189,440 of these ingredients appear in all 20 cuisines, it might be a suitable idea to remove these ingredients from our training set.
+
+
+
+## Identifying Ingredients
+
+```{r}
+# Find the Identifying Ingredients
 data <- unique %>% filter(kinds!=1)
 
 special <- unique %>% filter(kinds == 1)
 #n_distinct(special$ingredients)
 #n_distinct(special$id)
-
 ```
 
 Of the 6,715 ingredients, 2,597 only appear in one type of cuisine.  We can use this information to perform an initial screening of our data, classifying any dish that has one of these ingredients.  This eliminates 5,438 of our recipes in the training set and 
@@ -127,7 +176,7 @@ p <- ggplot(s, aes(x=reorder(cuisine, -n))) +
 grid.arrange(g,p, ncol=2, top = "Recipes with Identifying Ingredients")
 ```
 
-## Simple Ingredients
+## Simplifying Ingredients
 
 Many of the ingredients listed in the data are variations of the same.  For instance:
 
@@ -135,7 +184,7 @@ Many of the ingredients listed in the data are variations of the same.  For inst
 colnames(food)[c(4,5)]
 ```
 
-It does not make sense to consider these two as distinct ingredients and their addition contributes to a very slow runtime for our model.  In an attempt to reduce our dimention size, we will try to combine these as best we can in a quick, automated way.  
+It does not make sense to consider these two as distinct ingredients and their addition contributes to a very slow runtime for our model.  In an attempt to reduce our dimension size, we will try to combine these as best we can in a quick, automated way.  
 
 ```{r}
 common <- data %>% filter(!stringr::str_detect(ingredients, " "))
@@ -143,7 +192,7 @@ common <- data %>% filter(!stringr::str_detect(ingredients, " "))
 commonI <- common[!duplicated(common$ingredients), "ingredients"]
 ```
 
-We start by finding ingredients that consist of only one word.  We consider these ingredients "fundemental", unable to be simplified more.  For instance, both of the above variables should really be considered *"spinach"*. 
+We start by finding ingredients that consist of only one word.  We consider these ingredients "fundamental", unable to be simplified more.  For instance, both of the above variables should really be considered *"spinach"*. 
 
 ```{r}
 allI <- data[!duplicated(data$ingredients), "ingredients"]
@@ -190,6 +239,108 @@ commons <- commons %>% mutate(ingredients = ifelse(!is.na(short),short,ingredien
 #Models
 
 ## CART
+
+First, some more data cleaning. Five cuisines didn't show up enough to be predicted by CART in any scenario that I tried (and I tried many!). I combined two of them (British and Irish) to form a larger category (UK) that can be predicted by CART and got rid of the other three cuisines.
+
+```{r}
+food$cuisine <- replace(food$cuisine, food$cuisine == "irish"|food$cuisine == "british", "UK") # add irish to british
+
+food <- food %>% filter(cuisine != "brazilian") # not frequent enough
+food <- food %>% filter(cuisine != "russian") # not frequent enough
+food <- food %>% filter(cuisine != "jamaican") # not frequent enough
+```
+
+Here's the model that I end up using. See crossvalidation below to figure out why.
+
+```{r}
+dataA <- food[sample(nrow(food),nrow(food)*.5),] 
+dataB <- anti_join(food, dataA, by = "id")
+
+cp_star <- .0013 # see cv section for this
+model_formula <- as.formula(cuisine ~ . - id)
+tree_parameters <- rpart.control(maxdepth = 20, cp = cp_star, minsplit = 1, minbucket = 1) 
+model_CART <- rpart(model_formula, data = dataA, control=tree_parameters) # takes a LONG time
+
+# Score/error
+y_hat <- model_CART %>% 
+  predict(newdata=dataB, type="class") # takes about a minute
+conf.matrix <- MLmetrics::ConfusionMatrix(y_true = dataB$cuisine, y_pred = y_hat)
+t <- as.data.frame(conf.matrix) %>% 
+  group_by(y_true) %>% 
+  mutate(total = sum(Freq)) %>% 
+  ungroup() %>% 
+  mutate(percent = Freq/total)
+
+ggplot(t %>% filter(percent>0.1)) +
+  geom_point(aes(y_pred, y_true, size = percent, color = percent)) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +scale_y_discrete(name="True", limits = rev(levels(t$y_true))) +
+  labs(list(title = "CART Confusion Matrix", x = "Guess"))+
+  guides(color = FALSE, size = FALSE)+scale_colour_gradient(low = "pink", high = "red4")
+```
+
+## Crossvalidation of ultimate model
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+# k = 2 fold crossvalidation
+
+# Consider a range of cp. I chose this through trial and error.
+cp_vector <- seq(from = .0007, to = .0025, by = .0003)
+
+# Save results here
+results <- data_frame(
+  cp = cp_vector,
+  MLL = 0 # multi class log loss (MLL)
+)
+
+model_formula <- as.formula(cuisine ~ . - id)
+
+set.seed(18)
+for(i in 1:length(cp_vector)){
+  # Note: these two datasets are disjoint
+  dataA <- food[sample(nrow(food),nrow(food)*.5),] 
+  dataB <- anti_join(food, dataA, by = "id")
+  
+  # maxdepth being large is what causes the thing to take so long
+  # as maxdepth increases, we get predictions of more cuisines
+  # maxdepth = 20 is doing very well and takes about 10 minutes to run
+
+  # Fit model onto A, get predictions for B, compute MLL for B  
+  tree_parameters <- rpart.control(maxdepth = 20, cp = cp_vector[i], minsplit = 1, minbucket = 1) 
+  model_CART <- rpart(model_formula, data = dataA, control=tree_parameters) # takes a LONG time
+
+  p_hat_matrix <- model_CART %>% 
+    predict(type = "prob", newdata = dataB) # takes about a minute
+
+  MLLB <- MLmetrics::MultiLogLoss(y_true = dataB$cuisine, y_pred = p_hat_matrix)
+
+  # Fit model onto B, get predictions for A, compute MLL for A
+  
+  tree_parameters <- rpart.control(maxdepth = 20, cp = cp_vector[i], minsplit = 1, minbucket = 1) 
+  model_CART <- rpart(model_formula, data = dataB, control=tree_parameters) # takes a LONG time
+
+  p_hat_matrix <- model_CART %>% 
+    predict(type = "prob", newdata = dataA) # takes about a minute
+  
+  MLLA <- MLmetrics::MultiLogLoss(y_true = dataA$cuisine, y_pred = p_hat_matrix)
+  
+  # Take mean
+  results$MLL[i] <- (MLLA + MLLB)/2
+}
+
+optimal <- results %>% 
+  arrange(MLL) %>% 
+  slice(1)
+cp_star <- optimal$cp
+MLL_star <- optimal$MLL
+optimal %>% 
+  kable(digits=4)
+
+ggplot(results, aes(x=cp, y=MLL)) +
+  geom_point() +
+  labs(x="CART Complexity Parameter", y="Multi-Class Log Loss", title="Crossvalidation estimates of Multi-Class Log Loss for CART model") +
+  geom_vline(xintercept = cp_star, col="red")
+```
+
 
 ## Random Forest
 
@@ -481,7 +632,7 @@ Note: Output a CSV using `write_csv(DATAFRAME_NAME, path="data/SUBMISSION_NAME.c
 that is Kaggle submitable. This submission should return a Kaggle score that is
 close to your crossvalidated score.
 
-
+> LY: I need to create a submission file for Kaggle with the crossvalidated CART.
 
 # Citations and references
 
@@ -496,12 +647,77 @@ the above, like other EDA's, other modeling approaches you've tried, etc. Please
 set the R code chunk `eval=FALSE` here so that default is that R Markdown
 doesn't run the code, but a user can flip this switch if they are curious.
 
-```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+If we get rid of Italian, then Southern US becomes the cuisine that is over-predicted.
 
+```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+food2 <- food %>% filter(cuisine != "italian")
+sub_2 <- food2[sample(nrow(food2),nrow(food2)*.5),]
+sub2_2 <- anti_join(food2, sub, by = "id")
+model_CART_2 <- rpart(model_formula, data = sub_2, control=tree_parameters) # takes 10 minutes
+
+# Score/error
+p_hat_matrix_2 <- model_CART_2 %>% 
+  predict(type = "prob", newdata = sub2_2)
+MLmetrics::MultiLogLoss(y_true = sub2_2$cuisine, y_pred = p_hat_matrix_2)
+y_hat_2 <- model_CART_2 %>% 
+  predict(newdata=sub2_2, type="class")
+MLmetrics::Accuracy(y_true = sub2_2$cuisine, y_pred = y_hat_2)
+conf.matrix_2 <- MLmetrics::ConfusionMatrix(y_true = sub2_2$cuisine, y_pred = y_hat_2)
+t2 <- as.data.frame(conf.matrix_2) %>% 
+  group_by(y_true) %>% 
+  mutate(total = sum(Freq)) %>% 
+  ungroup() %>% 
+  mutate(percent = Freq/total)
+
+ggplot(t2 %>% filter(percent>0.1)) +
+  geom_point(aes(y_pred, y_true, size = percent, color = percent)) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +scale_y_discrete(name="True", limits = rev(levels(t$y_true))) +
+  labs(list(title = "CART Confusion Matrix", x = "Guess"))+
+  guides(color = FALSE, size = FALSE)+scale_colour_gradient(low = "pink", high = "red4")
 
 ```
 
+If we get rid of Southern US, then Mexican becomes the cuisine that is over-predicted.
 
+```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+food3 <- food2 %>% filter(cuisine != "southern_us")
+sub_3 <- food3[sample(nrow(food3),nrow(food3)*.5),]
+sub2_3 <- anti_join(food3, sub, by = "id")
+model_CART_3 <- rpart(model_formula, data = sub_3, control=tree_parameters) # takes 10 minutes
 
+# Score/error
+p_hat_matrix_3 <- model_CART_3 %>% 
+  predict(type = "prob", newdata = sub2_3)
+MLmetrics::MultiLogLoss(y_true = sub2_3$cuisine, y_pred = p_hat_matrix_3)
+y_hat_3 <- model_CART_3 %>% 
+  predict(newdata=sub2_3, type="class")
+MLmetrics::Accuracy(y_true = sub2_3$cuisine, y_pred = y_hat_3)
+conf.matrix_3 <- MLmetrics::ConfusionMatrix(y_true = sub2_3$cuisine, y_pred = y_hat_3)
+t3 <- as.data.frame(conf.matrix_3) %>% 
+  group_by(y_true) %>% 
+  mutate(total = sum(Freq)) %>% 
+  ungroup() %>% 
+  mutate(percent = Freq/total)
+
+ggplot(t3 %>% filter(percent>0.1)) +
+  geom_point(aes(y_pred, y_true, size = percent, color = percent)) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +scale_y_discrete(name="True", limits = rev(levels(t$y_true))) +
+  labs(list(title = "CART Confusion Matrix", x = "Guess"))+
+  guides(color = FALSE, size = FALSE)+scale_colour_gradient(low = "pink", high = "red4")
+```
+
+So it seems like there is no escape from this phenomenon of one category getting everything to predict to it! Not sure why it does this.
+
+The table below was helpful for debugging some things. It shows all of the cuisines and how many ingredients in the data set are attributed to each cuisine.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
+table.of.stuff <- food$cuisine %>% table() %>% sort()
+table.of.stuff <- as.data.frame(table.of.stuff)
+# table.of.stuff <- table.of.stuff %>% filter(Freq > 1000)
+table.of.stuff <- table.of.stuff %>% rename()
+table.of.stuff
+```
 
 
