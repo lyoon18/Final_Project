@@ -20,6 +20,7 @@ library(tidyverse)
 library(jsonlite)
 library(gridExtra)
 library(randomForest)
+library(stringr)
 
 # Some customization.  You can alter or delete as desired (if you know what you are doing).
 knitr::opts_chunk$set(
@@ -46,14 +47,9 @@ RF: String Cleaning | 69.4% | 15 minutes | 1,190                  |
 As shown in the table above, although CART has the shortest runtime, it also generates the lowest accuracy rate. Whereas for the 
 
 
-
 # Exploratory Data Analysis
   
 ## Data
-  
-```{r, cache=TRUE}
-food <- read_csv("data/recipe.csv")
-```
 
 ```{r, cache=TRUE}
 long <- fromJSON("data/train.json") %>% 
@@ -84,7 +80,7 @@ There were 20 total cuisines represented in our dataset.  Of these, Italian was 
 sample_n(long,5)
 ```
 
-As you can see from above, the original dataset was structured in that each row represented an ingredient in a recipe. This format makes it very difficult for us to run classification tree models so we decided to convert all the ingredients into binary indicators using One Hot Encoding.
+As you can see from above, the original dataset was structured in that each row represented an ingredient in a recipe. This format makes it very difficult for us to run classification tree models so we decided to convert all the ingredients into binary indicators using One-Hot Encoding.
 
 
 ```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5, echo=FALSE}
@@ -179,7 +175,7 @@ wordcloud(words = freq$Ingredient, freq = freq$Frequency, min.freq=1, random.ord
 As the wordcloud shows, the most commonly used ingredient is salt. Since 189,440 of these ingredients appear in all 20 cuisines, it might be a suitable idea to remove these ingredients from our training set.
 
 
-## Simplifying Ingredients
+## String Cleaning Ingredient Variables
 
 Many of the ingredients listed in the data are variations of the same.  For instance:
 
@@ -251,7 +247,7 @@ food$cuisine <- replace(food$cuisine, food$cuisine == "irish"|food$cuisine == "b
 food <- food %>% 
   filter(cuisine != "brazilian") %>% 
   filter(cuisine != "russian") %>% 
-  filter(cuisine != "jamaican")  # These cuisines did not appear frequent enough
+  filter(cuisine != "jamaican")  # Did not appear frequent enough
 ```
 
 Here's the model that we ended up using. See crossvalidation below to figure out why.
@@ -351,17 +347,12 @@ ggplot(results, aes(x=cp, y=MLL)) +
 
 ### Trims
 
-
-#### No Trim
-```{r, cache=TRUE, eval=FALSE}
-
 #### No Trim (Baseline Model)
-
+```{r, cache=TRUE, eval=FALSE}
 recipe <- food
 names(recipe) <- make.names(names(recipe))
 recipe <- recipe[, !duplicated(colnames(recipe), fromLast = TRUE)]
 recipe[] <- lapply(recipe, factor)
-
 
 sub <- recipe[sample(nrow(recipe),nrow(recipe)*.8),]
 sub2 <- anti_join(recipe, sub, by = "id")
@@ -397,11 +388,10 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
 ```
 
 
-#### No Identifying
+#### Model With No Identifying Ingredients
 
 ```{r, eval=FALSE}
 identify <- filter(unique, kinds != 1)
-
 
 # Create dummy variable
 dummies = model.matrix(~identify$ingredients)
@@ -460,7 +450,7 @@ ggplot(fit_large_graph3 %>% filter(percent>0.1)) +
   scale_colour_gradient(low = "pink", high = "red4")
 ```
 
-#### Commons
+#### Model With String Cleaning
 
 ```{r, eval = FALSE}
 ids <- unique %>% group_by(id) %>% summarise
@@ -552,10 +542,15 @@ ggplot(fit_large_graph2 %>% filter(percent>=.05)) +
   labs(list(title = paste("Trimmed RF Common Ingred: Acc: ", acc,"%, Runtime: ~15 min!!!, Var: ",ncol(dumb), sep=""), x = "Guess"))+
   guides(color = FALSE, size = FALSE)+
   scale_colour_gradient(low = "pink", high = "red4")
+
+summary(fitC)
 ```
 
-# Create submission
+As shown in the confusion matrix plot above, this trimmed Random Forest model achieved an accuracy rate of 69.8% and only took 15 minutes to run! All cuisines were predicted correctly, but the strength of the predictions vary. For example, Italian was predicted the 
 
+
+
+# Creating Submission Files
 ```{r}
 kaggle <- fromJSON("data/train.json") %>% 
   unnest()
@@ -575,9 +570,7 @@ kaggle <- rbind(kaggle, addI)
 # First RF model
 
 kRF <- kaggle[,-which(names(kaggle) %in% colnames(sub))]
-
 predictK1 <- predict(fit, kaggle)
-
 ```
 
 
